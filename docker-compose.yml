@@ -1,0 +1,9 @@
+services:
+  pipeline:
+    build: .
+    container_name: cnpj_pipeline
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: "no"
