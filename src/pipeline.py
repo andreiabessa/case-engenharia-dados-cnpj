@@ -157,7 +157,125 @@ def extract():
             temp_file.unlink(missing_ok=True)
             raise
 
+def extract_naturezas():
+
+    logging.info("Iniciando download da tabela de naturezas jurídicas")
+
+    url = (
+        f"{SOURCE_BASE_URL.rstrip('/')}/"
+        f"{COMPETENCIA}/Naturezas.zip"
+    )
+
+    zip_file = BRONZE / f"Naturezas_{COMPETENCIA}.zip"
+    temp_file = zip_file.with_suffix(".zip.tmp")
+
+    # Reaproveita o arquivo se já existir e for um ZIP válido
+    if zip_file.exists() and zipfile.is_zipfile(zip_file):
+        logging.info("Tabela de naturezas já existe. Reutilizando.")
+        return
+
+    try:
+        with requests.get(
+            url,
+            stream=True,
+            timeout=(30, 300)
+        ) as response:
+
+            response.raise_for_status()
+
+            with open(temp_file, "wb") as arquivo:
+                for bloco in response.iter_content(
+                    chunk_size=1024 * 1024
+                ):
+                    if bloco:
+                        arquivo.write(bloco)
+
+        if not zipfile.is_zipfile(temp_file):
+            raise ValueError("Naturezas.zip inválido.")
+
+        with zipfile.ZipFile(temp_file) as arquivo_zip:
+            arquivos_csv = [
+                nome for nome in arquivo_zip.namelist()
+                if not nome.endswith("/")
+            ]
+
+            if len(arquivos_csv) != 1:
+                raise ValueError(
+                    "Esperado exatamente um CSV em Naturezas.zip."
+                )
+
+        temp_file.replace(zip_file)
+
+        logging.info(
+            "Download da tabela de naturezas concluído: %s",
+            zip_file.name
+        )
+
+    except Exception:
+        temp_file.unlink(missing_ok=True)
+        raise
+
 # ==========================================
+
+def load_naturezas():
+    logging.info("Carregando tabela de naturezas jurídicas")
+
+    zip_file = BRONZE / f"Naturezas_{COMPETENCIA}.zip"
+
+    if not zipfile.is_zipfile(zip_file):
+        raise ValueError("Arquivo Naturezas.zip inexistente ou inválido.")
+
+    with zipfile.ZipFile(zip_file) as arquivo_zip:
+        arquivos_csv = [
+            nome for nome in arquivo_zip.namelist()
+            if not nome.endswith("/")
+        ]
+
+        if len(arquivos_csv) != 1:
+            raise ValueError("Esperado exatamente um CSV em Naturezas.zip.")
+
+        with arquivo_zip.open(arquivos_csv[0]) as arquivo_csv:
+            naturezas = pd.read_csv(
+                arquivo_csv,
+                sep=";",
+                encoding="latin-1",
+                header=None,
+                names=["natureza_juridica", "descricao_natureza"],
+                dtype=str,
+                quotechar='"'
+            )
+
+    naturezas["natureza_juridica"] = naturezas["natureza_juridica"].str.strip()
+    naturezas["descricao_natureza"] = naturezas["descricao_natureza"].str.strip()
+
+    if naturezas["natureza_juridica"].duplicated().any():
+        raise ValueError("Existem códigos de natureza jurídica duplicados.")
+
+    con = duckdb.connect(str(DB_FILE))
+
+    try:
+        con.register("naturezas_df", naturezas)
+
+        con.execute("""
+            CREATE OR REPLACE TABLE naturezas_juridicas AS
+            SELECT
+                natureza_juridica,
+                descricao_natureza
+            FROM naturezas_df
+        """)
+
+        total = con.execute(
+            "SELECT COUNT(*) FROM naturezas_juridicas"
+        ).fetchone()[0]
+
+        logging.info(
+            "Tabela de naturezas jurídicas carregada: %s registros",
+            total
+        )
+
+    finally:
+        con.close()
+
 # LOAD + TRANSFORM
 # ==========================================
 
@@ -457,12 +575,20 @@ def create_gold():
         con.execute(f"""
             COPY (
                 SELECT
-                    natureza_juridica,
+                    e.natureza_juridica,
+                    COALESCE(
+                        nj.descricao_natureza,
+                        'Não encontrada'
+                    ) AS descricao_natureza,
                     COUNT(*) AS quantidade_empresas,
-                    SUM(capital_social) AS capital_total,
-                    AVG(capital_social) AS capital_medio
-                FROM empresas
-                GROUP BY natureza_juridica
+                    SUM(e.capital_social) AS capital_total,
+                    AVG(e.capital_social) AS capital_medio
+                FROM empresas e
+                LEFT JOIN naturezas_juridicas nj
+                    ON TRIM(e.natureza_juridica) = nj.natureza_juridica
+                GROUP BY
+                    e.natureza_juridica,
+                    nj.descricao_natureza
                 ORDER BY quantidade_empresas DESC
             )
             TO '{GOLD / "empresas_por_natureza.parquet"}'
@@ -509,9 +635,13 @@ def main():
 
     extract()
 
+    extract_naturezas()
+
     total = transform()
 
     indicadores = quality(total)
+
+    load_naturezas()
 
     create_gold()
 
@@ -519,7 +649,7 @@ def main():
         "competencia": COMPETENCIA,
         "arquivos": [
             f"{nome}.zip" for nome in ARQUIVOS
-        ],
+        ] + ["Naturezas.zip"],
         "data_execucao_utc": inicio.isoformat(),
         "total_registros": total,
         "qualidade": indicadores,
