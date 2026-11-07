@@ -47,7 +47,6 @@ Receita Federal
 **Gold – Dados analíticos**
 
 São gerados dois arquivos Parquet:
-- Arquivo	- Conteúdo
 - empresas_por_natureza.parquet - Quantidade de empresas, capital total e médio por natureza jurídica.
 - capital_por_porte.parquet	- Quantidade de empresas, capital total e médio por porte.
 
