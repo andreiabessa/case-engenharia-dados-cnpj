@@ -597,9 +597,19 @@ def quality(total):
 
     logging.info("Executando testes de qualidade")
 
+    TEMP_DIR = BASE / "tmp"
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
     con = duckdb.connect(str(DB_FILE))
 
     try:
+        # Controle de consumo de recursos
+        con.execute("SET memory_limit = '1GB'")
+        con.execute("SET threads = 1")
+        con.execute("SET preserve_insertion_order = false")
+        con.execute(f"SET temp_directory = '{TEMP_DIR}'")
+        con.execute("SET max_temp_directory_size = '10GB'")
+
         # Carrega todos os campos da Silver no DuckDB
         con.execute(f"""
             CREATE OR REPLACE TABLE empresas AS
@@ -697,7 +707,8 @@ def create_gold():
             GOLD / "capital_por_porte.parquet",
             GOLD / "empresas_por_qualificacao.parquet",
             GOLD / "top_empresas_por_porte.parquet",
-            GOLD / "menores_empresas_por_porte.parquet"
+            GOLD / "menores_empresas_por_porte.parquet",
+            GOLD / "empresas_consolidada.parquet"
         ]
 
         for arquivo in arquivos_gold:
@@ -782,6 +793,32 @@ def create_gold():
                 ORDER BY quantidade_empresas DESC
             )
             TO '{GOLD / "empresas_por_qualificacao.parquet"}'
+            (FORMAT PARQUET, COMPRESSION SNAPPY)
+        """)
+
+        # 4. Base geral consolidada de empresas
+        logging.info("Gerando base geral consolidada de empresas")
+
+        con.execute(f"""
+            COPY (
+                SELECT
+                    e.*,
+                    COALESCE(
+                        nj.descricao_natureza,
+                        'Não encontrada'
+                    ) AS descricao_natureza,
+                    COALESCE(
+                        q.descricao_qualificacao,
+                        'Código não encontrado na tabela oficial'
+                    ) AS descricao_qualificacao
+                FROM empresas e
+                LEFT JOIN naturezas_juridicas nj
+                    ON TRIM(e.natureza_juridica) = nj.natureza_juridica
+                LEFT JOIN qualificacoes_responsavel q
+                    ON TRIM(e.qualificacao_responsavel)
+                       = q.codigo_qualificacao
+            )
+            TO '{GOLD / "empresas_consolidada.parquet"}'
             (FORMAT PARQUET, COMPRESSION SNAPPY)
         """)
 

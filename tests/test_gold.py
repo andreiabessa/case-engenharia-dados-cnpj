@@ -137,3 +137,39 @@ def test_gold_preserva_codigos_sem_correspondencia(tmp_path, monkeypatch):
 
     finally:
         con.close()
+
+
+def test_gold_gera_tabela_consolidada_completa(tmp_path, monkeypatch):
+    preparar_banco_teste(tmp_path, monkeypatch)
+
+    pipeline.create_gold()
+
+    con = duckdb.connect()
+
+    try:
+        arquivo = str(tmp_path / "gold/empresas_consolidada.parquet")
+
+        total = con.execute(
+            "SELECT COUNT(*) FROM read_parquet(?)",
+            [arquivo]
+        ).fetchone()[0]
+
+        assert total == 4
+
+        dados = con.execute("""
+            SELECT
+                cnpj_basico,
+                descricao_natureza,
+                descricao_qualificacao
+            FROM read_parquet(?)
+            WHERE cnpj_basico = '44444444'
+        """, [arquivo]).fetchone()
+
+        assert dados == (
+            "44444444",
+            "Não encontrada",
+            "Código não encontrado na tabela oficial"
+        )
+
+    finally:
+        con.close()

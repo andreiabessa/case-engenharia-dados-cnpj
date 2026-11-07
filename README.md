@@ -2,293 +2,128 @@
 
 ## 1. Objetivo
 
-Desenvolver um pipeline de Engenharia de Dados para ingestão, transformação, validação e análise dos dados públicos de empresas da Receita Federal.
+Desenvolver um pipeline de Engenharia de Dados para ingestão, transformação, validação e disponibilização analítica dos Dados Abertos do CNPJ da Receita Federal.
 
-A solução utiliza Python, DuckDB, Parquet e Docker, seguindo uma arquitetura organizada em camadas Bronze, Silver e Gold.
+A solução utiliza Python, Pandas, DuckDB, PyArrow, Parquet e Docker, organizada em camadas Bronze, Silver e Gold.
 
 ## 2. Fonte de dados e escopo
 
-- **Fonte:** Dados Abertos do CNPJ – Receita Federal.
-- **Competência:** Outubro de 2026 (`2026-10`).
-- **Arquivo principal processado:** `Empresas0.zip`.
-- **Tabela auxiliar:** `Naturezas.zip`, com os códigos e as descrições oficiais das naturezas jurídicas.
-- **Formato original:** CSV delimitado por ponto e vírgula, codificação Latin-1.
-
-A base de empresas é dividida em dez partições (`Empresas0` a `Empresas9`). Neste processamento foi utilizada somente a partição `Empresas0`. Portanto, os resultados não representam a totalidade das empresas brasileiras.
-
-## 3. Arquitetura
-
-```text
-                    RECEITA FEDERAL
-                          |
-          +---------------+---------------+
-          |               |               |
-          v               v               v
-    Empresas0.zip   Naturezas.zip   Qualificacoes.zip
-          |               |               |
-          v               v               v
-       BRONZE          BRONZE          BRONZE
-          |               |               |
-          v               |               |
-       SILVER             |               |
-          |               |               |
-          v               v               v
-                    DUCKDB
-          +---------------+---------------+
-          |               |               |
-          v               v               v
-      empresas    naturezas_juridicas  qualificacoes_responsavel
-          |               |               |
-          +---------------+---------------+
-                          |
-                    LEFT JOIN
-                          |
-                          v
-                         GOLD
-                   Arquivos Parquet
-```
-
-**Bronze – Dados brutos**
-- Download e armazenamento dos arquivos ZIP das empresas, das naturezas jurídicas e das qualificações dos responsáveis.
-- Validação da integridade dos arquivos.
-- Reutilização de arquivos válidos já existentes.
-
-**Silver – Dados tratados**
-- Leitura em lotes (*chunks*) de 250 mil registros.
-- Padronização dos campos e conversão do capital social para decimal.
-- Validação do CNPJ básico e identificação de dados inválidos ou ausentes.
-- Armazenamento em Parquet com schema definido.
-
-### Estrutura da tabela `empresas`
-
-A tabela `empresas`, armazenada no DuckDB, contém os dados tratados na camada Silver, com a seguinte estrutura:
-
-| Coluna | Descrição |
-|---|---|
-| `cnpj_basico` | Oito primeiros dígitos do CNPJ |
-| `razao_social` | Nome empresarial da empresa |
-| `natureza_juridica` | Código da natureza jurídica |
-| `qualificacao_responsavel` | Código da qualificação do responsável |
-| `capital_social` | Valor do capital social |
-| `porte_empresa` | Código do porte da empresa |
-| `ente_federativo_responsavel` | Ente federativo responsável, quando aplicável |
-
-A tabela é utilizada como base para as consultas analíticas e para a geração dos arquivos da camada Gold.
-
-**DuckDB – Armazenamento e relacionamento**
-- Criação da tabela `empresas` a partir dos dados Silver.
-- Criação da tabela `naturezas_juridicas` a partir do arquivo oficial `Naturezas.zip`.
-- Criação da tabela `qualificacoes_responsavel` a partir do arquivo oficial `Qualificacoes.zip`.
-- Relacionamento de `empresas` com `naturezas_juridicas` pelo código da natureza jurídica.
-- Relacionamento de `empresas` com `qualificacoes_responsavel` pelo código da qualificação do responsável.
-
-**Gold – Dados analíticos**
-
-São gerados três arquivos Parquet:
-
-| Caminho | Conteúdo |
-|---|---|
-| `data/2026-10/gold/empresas_por_natureza.parquet` | Código e descrição oficial da natureza jurídica, quantidade de empresas, capital total e capital médio. |
-| `data/2026-10/gold/empresas_por_qualificacao.parquet` | Código e descrição da qualificação do responsável, quantidade de empresas, capital total e capital médio. |
-| `data/2026-10/gold/capital_por_porte.parquet` | Quantidade de empresas, capital total e capital médio por porte. |
-
-A consulta de natureza jurídica e a consulta de qualificação utilizam `LEFT JOIN`, preservando os registros de empresas mesmo quando não existe correspondência nas tabelas auxiliares.
-
-Para naturezas jurídicas sem correspondência, é utilizada a identificação `Não encontrada`. Para qualificações sem correspondência oficial, é utilizada a identificação `Código não encontrado na tabela oficial`.
-
-
-### Organização dos arquivos gerados
-
-Os dados são organizados em diretórios separados por competência, evitando a mistura de resultados de períodos diferentes.
-
-```text
-data/
-└── 2026-10/
-    ├── bronze/
-    │   ├── Empresas0.zip
-    │   ├── Naturezas.zip
-    │   └── Qualificacoes.zip
-    ├── silver/
-    │   └── empresas.parquet
-    ├── gold/
-    │   ├── empresas_por_natureza.parquet
-    │   ├── empresas_por_qualificacao.parquet
-    │   └── capital_por_porte.parquet
-    ├── cnpj.duckdb
-    └── auditoria.json
-```
+- Fonte: Dados Abertos do CNPJ – Receita Federal.
+- Competência processada: Outubro de 2026 (`2026-10`).
+- Arquivo principal: `Empresas0.zip`.
+- Tabelas auxiliares: `Naturezas.zip` e `Qualificacoes.zip`.
+- Formato original: CSV delimitado por ponto e vírgula, codificação Latin-1.
 
-**Tabelas disponíveis no DuckDB (`data/2026-10/cnpj.duckdb`):**
+A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Neste projeto foi processada somente a partição `Empresas0`, conforme o escopo do case.
 
-| Tabela | Origem |
-|---|---|
-| `empresas` | Dados tratados da camada Silver |
-| `naturezas_juridicas` | `data/2026-10/bronze/Naturezas.zip` |
-| `qualificacoes_responsavel` | `data/2026-10/bronze/Qualificacoes.zip` |
+Os resultados não representam a totalidade das empresas brasileiras.
 
-A competência é definida pela variável `COMPETENCIA`. Quando configurada como `auto`, o pipeline utiliza automaticamente o mês anterior.
+## 3. Fonte e URLs dos arquivos
 
+O endereço-base é configurado pela variável `SOURCE_BASE_URL`.
 
-## 4. Tecnologias
+O pipeline monta automaticamente os caminhos utilizando a competência e o nome de cada arquivo:
 
-- Python 3.12
-- Pandas
-- DuckDB
-- PyArrow
-- Requests
-- Python-dateutil
-- Docker e Docker Compose
-- GitHub Codespaces
+`{SOURCE_BASE_URL}/{COMPETENCIA}/{NOME_DO_ARQUIVO}.zip`
 
-## 5. Configuração e execução
+Para outubro de 2026, os caminhos são:
 
-Configure o arquivo `.env`:
+- `{SOURCE_BASE_URL}/2026-10/Empresas0.zip`
+- `{SOURCE_BASE_URL}/2026-10/Naturezas.zip`
+- `{SOURCE_BASE_URL}/2026-10/Qualificacoes.zip`
 
-```env
-SOURCE_BASE_URL=<URL_BASE_DOS_ARQUIVOS>
-COMPETENCIA=auto
-ARQUIVOS=Empresas0
-```
+A URL-base deve ser configurada no arquivo `.env`. Não inclua credenciais ou parâmetros privados no README ou no repositório.
 
-**Parâmetros:**
-- `COMPETENCIA=auto`: utiliza automaticamente o mês anterior ao da execução. Também aceita uma competência manual no formato `AAAA-MM`.
-- `ARQUIVOS=Empresas0`: seleciona uma partição.
-- `ARQUIVOS=Empresas0,Empresas1`: permite selecionar múltiplas partições.
-- `ARQUIVOS=todos`: seleciona as dez partições.
 
-A URL-base deve apontar para a origem dos arquivos da Receita Federal. O `.env` não deve ser versionado, pois contém informações de acesso.
+## 4. Arquitetura da solução
 
-**Construir a imagem:**
+O pipeline segue o fluxo ELT, organizado em três camadas:
 
-```bash
-docker compose build pipeline
-```
+- Bronze: armazenamento dos arquivos ZIP originais da Receita Federal.
+- Silver: dados tratados, padronizados e armazenados em Parquet.
+- Gold: tabelas analíticas e dados consolidados, prontos para consulta.
 
-**Executar o pipeline completo:**
+O DuckDB é utilizado para validações, transformações e geração das tabelas analíticas.
 
-```bash
-docker compose run --rm pipeline
-```
+## 5. Dados disponibilizados
 
-O processamento executa:
-1. Download dos arquivos de empresas.
-2. Download da tabela oficial de naturezas jurídicas.
-3. Transformação dos dados em lotes.
-4. Validação da qualidade.
-5. Carga das tabelas no DuckDB.
-6. Relacionamento das empresas com as descrições oficiais.
-7. Geração dos arquivos Gold.
-8. Geração da auditoria.
+- `empresas_por_natureza.parquet`: quantidade de empresas e indicadores de capital por natureza jurídica.
+- `capital_por_porte.parquet`: distribuição de empresas e capital por porte.
+- `empresas_por_qualificacao.parquet`: indicadores por qualificação do responsável.
+- `empresas_consolidada.parquet`: dados das empresas enriquecidos com descrições das tabelas auxiliares.
 
-Após alterações no código-fonte, reconstrua a imagem Docker.
+## 6. Como executar
 
-## 6. Qualidade dos dados
+### Pré-requisitos
 
-Foram implementadas verificações de volume, unicidade e validade do CNPJ básico, validade do capital social, capitais negativos e campos ausentes.
+- GitHub Codespaces ou ambiente com Docker e Docker Compose.
+- Arquivo `.env` configurado na raiz do projeto.
 
-**Resultados da execução:**
+### Configuração do ambiente
 
-| Indicador | Resultado |
-|---|---:|
-| Total de registros | 30.063.698 |
-| CNPJs únicos | 30.063.698 |
-| CNPJs inválidos | 0 |
-| Capitais inválidos | 0 |
-| Capitais negativos | 0 |
-| Naturezas ausentes no cadastro de empresas | 0 |
-| Portes ausentes | 4.109 |
+Configure as variáveis no arquivo `.env`:
 
-Os 4.109 registros sem porte informado foram preservados e classificados como `Não informado`. Todos apresentam capital social igual a zero.
+- `SOURCE_BASE_URL`: endereço-base dos arquivos oficiais.
+- `COMPETENCIA`: competência dos dados, por exemplo `2026-10`.
+- `ARQUIVOS`: partição de empresas a processar, neste case `Empresas0`.
 
-### Validação da tabela de naturezas jurídicas
+### Execução
 
-A tabela auxiliar oficial foi carregada automaticamente a partir de `Naturezas.zip`.
+Para construir a imagem:
 
-| Indicador | Resultado |
-|---|---:|
-| Registros na tabela oficial | 92 |
-| Naturezas presentes no Gold | 84 |
-| Naturezas com descrição | 84 |
-| Naturezas sem correspondência | 0 |
-| Cobertura das descrições no Gold | 100% |
+`docker compose build`
 
-A cobertura de 100% refere-se às 84 naturezas jurídicas presentes na amostra processada, e não aos 92 códigos existentes na tabela auxiliar.
+Para executar o pipeline:
 
-### Classificação por porte
+`docker compose run --rm pipeline`
 
-| Código | Descrição |
-|---|---|
-| 01 | Microempresa |
-| 03 | Empresa de Pequeno Porte |
-| 05 | Demais |
-| Vazio | Não informado |
+Para executar os testes automatizados:
 
-## 7. Resultados da camada Gold
+`docker compose run --rm pipeline pytest -v tests/`
 
-São gerados dois arquivos Parquet:
+Os dados são persistidos no diretório `data/`, montado como volume do contêiner.
 
-| Arquivo | Registros |
-|---|---:|
-| `empresas_por_natureza.parquet` | 84 |
-| `capital_por_porte.parquet` | 4 |
+## 7. Decisões técnicas e trade-offs
 
-**empresas_por_natureza.parquet**
+- **Python:** orquestração do processo de ingestão e transformação.
+- **Pandas:** leitura e tratamento dos dados de origem.
+- **DuckDB:** processamento analítico local, validações e consultas SQL.
+- **Parquet:** armazenamento colunar e eficiente para leitura analítica.
+- **Docker:** padronização do ambiente e reprodutibilidade da execução.
+- **Processamento em partição:** escolha da `Empresas0` para atender ao escopo do case e limitar o consumo de recursos.
+- **Controle de memória:** limitação de memória e paralelismo do DuckDB, além de diretório temporário para operações que excedam a memória disponível.
+- **Joins com tabelas auxiliares:** utilização de LEFT JOIN para preservar registros mesmo quando não existe correspondência na tabela de referência.
 
-Apresenta a distribuição das empresas por natureza jurídica, incluindo:
-- Código da natureza jurídica.
-- Descrição oficial da natureza jurídica.
-- Quantidade de empresas.
-- Capital social total.
-- Capital social médio.
+## 8. Qualidade dos dados
 
-**capital_por_porte.parquet**
+Na execução da competência `2026-10`, foram processados 30.063.698 registros da partição `Empresas0`.
 
-Apresenta a distribuição das empresas por porte, incluindo:
-- Código e descrição do porte.
-- Quantidade de empresas.
-- Capital social total.
-- Capital social médio.
+Resultados das verificações:
 
-Os resultados correspondem exclusivamente à partição `Empresas0.zip`, na competência analisada.
+- 30.063.698 registros processados.
+- 30.063.698 CNPJs básicos únicos.
+- Nenhum CNPJ básico inválido identificado.
+- Nenhum capital social inválido ou negativo identificado.
+- Nenhuma natureza jurídica ausente.
+- 4.109 registros sem informação de porte.
+- 337 empresas sem descrição de qualificação correspondente na tabela auxiliar.
 
-## 8. Auditoria
+Os registros sem correspondência nas tabelas auxiliares são preservados, com indicação de ausência de descrição, em vez de serem descartados.
 
-Ao final da execução, é gerado `data/2026-10/auditoria.json`, contendo:
+Os resultados são registrados no arquivo `auditoria.json`.
 
-- Competência e arquivos de empresas processados, incluindo a tabela auxiliar `Naturezas.zip`;
-- Data e hora da execução em UTC;
-- Total de registros;
-- Indicadores de qualidade;
-- Status do pipeline.
+## 9. Limitações conhecidas
 
-Na execução validada, o status foi `SUCESSO`.
+- O processamento contempla somente a partição `Empresas0`, e não a base completa de empresas.
+- Os resultados representam uma amostra da base nacional, não o universo completo de CNPJs.
+- A qualidade e a disponibilidade dos dados dependem da fonte oficial da Receita Federal.
+- Um código de qualificação sem correspondência na tabela auxiliar permanece sem descrição, sem perda do registro original.
 
-## 9. Decisões técnicas e melhorias futuras
+## 10. Evoluções futuras
 
-**Decisões técnicas:**
-- Processamento em lotes para reduzir o consumo de memória.
-- Parquet para armazenamento colunar e comprimido.
-- DuckDB para consultas, relacionamentos e agregações analíticas.
-- `LEFT JOIN` para enriquecer os dados sem descartar registros de empresas.
-- Download automático das tabelas oficiais de naturezas jurídicas e qualificações dos responsáveis.
-- Docker para padronização e reprodutibilidade do ambiente.
-- Schema explícito para garantir consistência dos dados.
-- Pytest para testes automatizados das regras de qualidade e da geração da camada Gold.
+- Processar as dez partições de empresas.
+- Implementar processamento incremental por competência.
+- Ampliar os testes automatizados e as regras de qualidade.
+- Implementar monitoramento de execução e alertas.
+- Avaliar particionamento dos arquivos Parquet para melhorar consultas em volumes maiores.
 
-**Escopo do processamento:**
-
-O case foi desenvolvido considerando a competência `2026-10` e a partição `Empresas0.zip`, conforme solicitado no enunciado. A arquitetura permite parametrizar a competência e os arquivos de entrada.
-
-**Melhorias futuras:**
-- Adicionar checksum para validação da integridade dos arquivos baixados.
-- Implementar monitoramento e alertas de falhas.
-- Implementar histórico e particionamento dos dados por competência.
-- Ampliar a cobertura dos testes automatizados para outras etapas do pipeline.
-
-## 10. Considerações finais
-
-O projeto demonstra a implementação de um pipeline de Engenharia de Dados com ingestão, processamento em lotes, validação de qualidade, modelagem analítica e auditoria.
-
-A solução prioriza simplicidade, organização, reprodutibilidade e uso de ferramentas open source.
-
-**Escopo dos resultados:** partição `Empresas0.zip`, competência outubro de 2026. Os indicadores não representam a totalidade da base nacional de CNPJs.
