@@ -37,7 +37,7 @@ A URL-base deve ser configurada no arquivo `.env`. Não inclua credenciais ou pa
 
 ## 4. Arquitetura da solução
 
-O pipeline segue o fluxo ELT, organizado em três camadas:
+O pipeline é organizado em três camadas (Bronze, Silver e Gold), seguindo um fluxo de ingestão, transformação e disponibilização analítica:
 
 - Bronze: armazenamento dos arquivos ZIP originais da Receita Federal.
 - Silver: dados tratados, padronizados e armazenados em Parquet.
@@ -91,6 +91,7 @@ Os dados são persistidos no diretório `data/`, montado como volume do contêin
 - **Parquet:** armazenamento colunar e eficiente para leitura analítica.
 - **Docker:** padronização do ambiente e reprodutibilidade da execução.
 - **Processamento em partição:** escolha da `Empresas0` para atender ao escopo do case e limitar o consumo de recursos.
+- **Processamento em blocos:** leitura dos arquivos CSV em blocos de 250 mil registros, reduzindo o consumo de memória durante a transformação da camada Silver.
 - **Controle de memória:** limitação de memória e paralelismo do DuckDB, além de diretório temporário para operações que excedam a memória disponível.
 - **Joins com tabelas auxiliares:** utilização de LEFT JOIN para preservar registros mesmo quando não existe correspondência na tabela de referência.
 
@@ -115,7 +116,7 @@ Os resultados são registrados no arquivo `auditoria.json`.
 ## 9. Limitações conhecidas
 
 - O processamento contempla somente a partição `Empresas0`, e não a base completa de empresas.
-- Os resultados representam uma amostra da base nacional, não o universo completo de CNPJs.
+- Os resultados representam um subconjunto da base nacional, correspondente à partição `Empresas0`, e não o universo completo de CNPJs.
 - A qualidade e a disponibilidade dos dados dependem da fonte oficial da Receita Federal.
 - Um código de qualificação sem correspondência na tabela auxiliar permanece sem descrição, sem perda do registro original.
 
