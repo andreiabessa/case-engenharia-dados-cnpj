@@ -215,6 +215,67 @@ def extract_naturezas():
         temp_file.unlink(missing_ok=True)
         raise
 
+
+
+def extract_qualificacoes():
+
+    logging.info("Iniciando download da tabela de qualificações")
+
+    url = (
+        f"{SOURCE_BASE_URL.rstrip('/')}/"
+        f"{COMPETENCIA}/Qualificacoes.zip"
+    )
+
+    zip_file = BRONZE / f"Qualificacoes_{COMPETENCIA}.zip"
+    temp_file = zip_file.with_suffix(".zip.tmp")
+
+    # Reaproveita o arquivo se já existir e for um ZIP válido
+    if zip_file.exists() and zipfile.is_zipfile(zip_file):
+        logging.info("Tabela de qualificações já existe. Reutilizando.")
+        return
+
+    try:
+        with requests.get(
+            url,
+            stream=True,
+            timeout=(30, 300)
+        ) as response:
+
+            response.raise_for_status()
+
+            with open(temp_file, "wb") as arquivo:
+                for bloco in response.iter_content(
+                    chunk_size=1024 * 1024
+                ):
+                    if bloco:
+                        arquivo.write(bloco)
+
+        if not zipfile.is_zipfile(temp_file):
+            raise ValueError("Qualificacoes.zip inválido.")
+
+        with zipfile.ZipFile(temp_file) as arquivo_zip:
+            arquivos_csv = [
+                nome for nome in arquivo_zip.namelist()
+                if not nome.endswith("/")
+            ]
+
+            if len(arquivos_csv) != 1:
+                raise ValueError(
+                    "Esperado exatamente um CSV em Qualificacoes.zip."
+                )
+
+        temp_file.replace(zip_file)
+
+        logging.info(
+            "Download da tabela de qualificações concluído: %s",
+            zip_file.name
+        )
+
+    except Exception:
+        temp_file.unlink(missing_ok=True)
+        raise
+
+
 # ==========================================
 
 def load_naturezas():
@@ -270,6 +331,76 @@ def load_naturezas():
 
         logging.info(
             "Tabela de naturezas jurídicas carregada: %s registros",
+            total
+        )
+
+    finally:
+        con.close()
+
+
+def load_qualificacoes():
+
+    logging.info("Carregando tabela de qualificações")
+
+    zip_file = BRONZE / f"Qualificacoes_{COMPETENCIA}.zip"
+
+    if not zipfile.is_zipfile(zip_file):
+        raise ValueError("Arquivo Qualificacoes.zip inexistente ou inválido.")
+
+    with zipfile.ZipFile(zip_file) as arquivo_zip:
+        arquivos_csv = [
+            nome for nome in arquivo_zip.namelist()
+            if not nome.endswith("/")
+        ]
+
+        if len(arquivos_csv) != 1:
+            raise ValueError(
+                "Esperado exatamente um CSV em Qualificacoes.zip."
+            )
+
+        with arquivo_zip.open(arquivos_csv[0]) as arquivo_csv:
+            qualificacoes = pd.read_csv(
+                arquivo_csv,
+                sep=";",
+                encoding="latin-1",
+                header=None,
+                names=[
+                    "codigo_qualificacao",
+                    "descricao_qualificacao"
+                ],
+                dtype=str,
+                quotechar='"'
+            )
+
+    qualificacoes["codigo_qualificacao"] = (
+        qualificacoes["codigo_qualificacao"].str.strip()
+    )
+    qualificacoes["descricao_qualificacao"] = (
+        qualificacoes["descricao_qualificacao"].str.strip()
+    )
+
+    if qualificacoes["codigo_qualificacao"].duplicated().any():
+        raise ValueError("Existem códigos de qualificação duplicados.")
+
+    con = duckdb.connect(str(DB_FILE))
+
+    try:
+        con.register("qualificacoes_df", qualificacoes)
+
+        con.execute("""
+            CREATE OR REPLACE TABLE qualificacoes_responsavel AS
+            SELECT
+                codigo_qualificacao,
+                descricao_qualificacao
+            FROM qualificacoes_df
+        """)
+
+        total = con.execute(
+            "SELECT COUNT(*) FROM qualificacoes_responsavel"
+        ).fetchone()[0]
+
+        logging.info(
+            "Tabela de qualificações carregada: %s registros",
             total
         )
 
@@ -560,6 +691,7 @@ def create_gold():
         arquivos_gold = [
             GOLD / "empresas_por_natureza.parquet",
             GOLD / "capital_por_porte.parquet",
+            GOLD / "empresas_por_qualificacao.parquet",
             GOLD / "top_empresas_por_porte.parquet",
             GOLD / "menores_empresas_por_porte.parquet"
         ]
@@ -618,6 +750,37 @@ def create_gold():
             (FORMAT PARQUET, COMPRESSION SNAPPY)
         """)
 
+
+        # 3. Distribuição por qualificação do responsável
+        logging.info(
+            "Gerando distribuição por qualificação do responsável"
+        )
+
+        con.execute(f"""
+            COPY (
+                SELECT
+                    TRIM(e.qualificacao_responsavel)
+                        AS codigo_qualificacao,
+                    COALESCE(
+                        q.descricao_qualificacao,
+                        'Código não encontrado na tabela oficial'
+                    ) AS descricao_qualificacao,
+                    COUNT(*) AS quantidade_empresas,
+                    SUM(e.capital_social) AS capital_total,
+                    AVG(e.capital_social) AS capital_medio
+                FROM empresas e
+                LEFT JOIN qualificacoes_responsavel q
+                    ON TRIM(e.qualificacao_responsavel)
+                       = q.codigo_qualificacao
+                GROUP BY
+                    TRIM(e.qualificacao_responsavel),
+                    q.descricao_qualificacao
+                ORDER BY quantidade_empresas DESC
+            )
+            TO '{GOLD / "empresas_por_qualificacao.parquet"}'
+            (FORMAT PARQUET, COMPRESSION SNAPPY)
+        """)
+
         logging.info("Camada Gold criada com sucesso")
 
     finally:
@@ -626,6 +789,7 @@ def create_gold():
 # ==========================================
 # AUDITORIA E EXECUÇÃO
 # ==========================================
+
 
 def main():
 
@@ -636,23 +800,59 @@ def main():
     extract()
 
     extract_naturezas()
+    extract_qualificacoes()
 
     total = transform()
 
     indicadores = quality(total)
 
     load_naturezas()
+    load_qualificacoes()
 
     create_gold()
+
+    # Indicadores de correspondência das qualificações
+    con = duckdb.connect(str(DB_FILE), read_only=True)
+
+    try:
+        qualificacoes_auditoria = con.execute("""
+            SELECT
+                COUNT(DISTINCT TRIM(e.qualificacao_responsavel)),
+                COUNT(DISTINCT CASE
+                    WHEN q.codigo_qualificacao IS NOT NULL
+                    THEN TRIM(e.qualificacao_responsavel)
+                END),
+                COUNT(DISTINCT CASE
+                    WHEN q.codigo_qualificacao IS NULL
+                    THEN TRIM(e.qualificacao_responsavel)
+                END),
+                COUNT(*) FILTER (
+                    WHERE q.codigo_qualificacao IS NULL
+                )
+            FROM empresas e
+            LEFT JOIN qualificacoes_responsavel q
+                ON TRIM(e.qualificacao_responsavel)
+                   = q.codigo_qualificacao
+        """).fetchone()
+    finally:
+        con.close()
+
+    indicadores_qualificacoes = {
+        "codigos_utilizados": qualificacoes_auditoria[0],
+        "codigos_encontrados": qualificacoes_auditoria[1],
+        "codigos_sem_correspondencia": qualificacoes_auditoria[2],
+        "empresas_sem_descricao": qualificacoes_auditoria[3]
+    }
 
     auditoria = {
         "competencia": COMPETENCIA,
         "arquivos": [
             f"{nome}.zip" for nome in ARQUIVOS
-        ] + ["Naturezas.zip"],
+        ] + ["Naturezas.zip", "Qualificacoes.zip"],
         "data_execucao_utc": inicio.isoformat(),
         "total_registros": total,
         "qualidade": indicadores,
+        "qualidade_qualificacoes": indicadores_qualificacoes,
         "status": "SUCESSO"
     }
 

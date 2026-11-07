@@ -19,43 +19,37 @@ A base de empresas é dividida em dez partições (`Empresas0` a `Empresas9`). N
 ## 3. Arquitetura
 
 ```text
-              Receita Federal
-                    |
-          +---------+---------+
-          |                   |
-          v                   v
-     Empresas0.zip       Naturezas.zip
-          |                   |
-          +---------+---------+
-                    |
-                    v
-                  BRONZE
-               Dados brutos
-                    |
-                    v
-                  SILVER
-             Empresas tratadas
-                 Parquet
-                    |
-                    v
-                  DUCKDB
-             +------+------+
-             |             |
-             v             v
-          empresas   naturezas_juridicas
-             |             |
-             +------+------+
-                    |
-                 LEFT JOIN
-                    |
-                    v
-                   GOLD
-             Indicadores analíticos
-                  Parquet
+                    RECEITA FEDERAL
+                          |
+          +---------------+---------------+
+          |               |               |
+          v               v               v
+    Empresas0.zip   Naturezas.zip   Qualificacoes.zip
+          |               |               |
+          v               v               v
+       BRONZE          BRONZE          BRONZE
+          |               |               |
+          v               |               |
+       SILVER             |               |
+          |               |               |
+          v               v               v
+                    DUCKDB
+          +---------------+---------------+
+          |               |               |
+          v               v               v
+      empresas    naturezas_juridicas  qualificacoes_responsavel
+          |               |               |
+          +---------------+---------------+
+                          |
+                    LEFT JOIN
+                          |
+                          v
+                         GOLD
+                   Arquivos Parquet
 ```
 
 **Bronze – Dados brutos**
-- Download e armazenamento dos arquivos ZIP das empresas e das naturezas jurídicas.
+- Download e armazenamento dos arquivos ZIP das empresas, das naturezas jurídicas e das qualificações dos responsáveis.
 - Validação da integridade dos arquivos.
 - Reutilização de arquivos válidos já existentes.
 
@@ -65,23 +59,73 @@ A base de empresas é dividida em dez partições (`Empresas0` a `Empresas9`). N
 - Validação do CNPJ básico e identificação de dados inválidos ou ausentes.
 - Armazenamento em Parquet com schema definido.
 
+### Estrutura da tabela `empresas`
+
+A tabela `empresas`, armazenada no DuckDB, contém os dados tratados na camada Silver, com a seguinte estrutura:
+
+| Coluna | Descrição |
+|---|---|
+| `cnpj_basico` | Oito primeiros dígitos do CNPJ |
+| `razao_social` | Nome empresarial da empresa |
+| `natureza_juridica` | Código da natureza jurídica |
+| `qualificacao_responsavel` | Código da qualificação do responsável |
+| `capital_social` | Valor do capital social |
+| `porte_empresa` | Código do porte da empresa |
+| `ente_federativo_responsavel` | Ente federativo responsável, quando aplicável |
+
+A tabela é utilizada como base para as consultas analíticas e para a geração dos arquivos da camada Gold.
+
 **DuckDB – Armazenamento e relacionamento**
 - Criação da tabela `empresas` a partir dos dados Silver.
 - Criação da tabela `naturezas_juridicas` a partir do arquivo oficial `Naturezas.zip`.
-- Relacionamento entre as tabelas pelo código da natureza jurídica.
+- Criação da tabela `qualificacoes_responsavel` a partir do arquivo oficial `Qualificacoes.zip`.
+- Relacionamento de `empresas` com `naturezas_juridicas` pelo código da natureza jurídica.
+- Relacionamento de `empresas` com `qualificacoes_responsavel` pelo código da qualificação do responsável.
 
 **Gold – Dados analíticos**
 
-São gerados dois arquivos Parquet:
+São gerados três arquivos Parquet:
 
-| Arquivo | Conteúdo |
+| Caminho | Conteúdo |
 |---|---|
-| `empresas_por_natureza.parquet` | Código e descrição oficial da natureza jurídica, quantidade de empresas, capital total e capital médio. |
-| `capital_por_porte.parquet` | Quantidade de empresas, capital total e capital médio por porte. |
+| `data/gold/empresas_por_natureza.parquet` | Código e descrição oficial da natureza jurídica, quantidade de empresas, capital total e capital médio. |
+| `data/gold/empresas_por_qualificacao.parquet` | Código e descrição da qualificação do responsável, quantidade de empresas, capital total e capital médio. |
+| `data/gold/capital_por_porte.parquet` | Quantidade de empresas, capital total e capital médio por porte. |
 
-A consulta de natureza jurídica utiliza `LEFT JOIN`, preservando os registros de empresas mesmo quando não existe correspondência na tabela auxiliar. Quando uma descrição não é encontrada, o resultado recebe o texto `Não encontrada`.
+A consulta de natureza jurídica e a consulta de qualificação utilizam `LEFT JOIN`, preservando os registros de empresas mesmo quando não existe correspondência nas tabelas auxiliares.
 
-Além dos arquivos analíticos, os dados detalhados são disponibilizados na tabela `empresas`, armazenada no banco DuckDB (`data/cnpj.duckdb`). A tabela auxiliar fica disponível em `naturezas_juridicas`.
+Para naturezas jurídicas sem correspondência, é utilizada a identificação `Não encontrada`. Para qualificações sem correspondência oficial, é utilizada a identificação `Código não encontrado na tabela oficial`.
+
+
+### Organização dos arquivos gerados
+
+```text
+data/
+├── bronze/
+│   ├── Empresas0.zip
+│   ├── Naturezas_2026-10.zip
+│   └── Qualificacoes_2026-10.zip
+│
+├── silver/
+│   └── empresas.parquet
+│
+├── gold/
+│   ├── empresas_por_natureza.parquet
+│   ├── empresas_por_qualificacao.parquet
+│   └── capital_por_porte.parquet
+│
+├── cnpj.duckdb
+└── auditoria.json
+```
+
+**Tabelas disponíveis no DuckDB (`data/cnpj.duckdb`):**
+
+| Tabela | Origem |
+|---|---|
+| `empresas` | Dados tratados da camada Silver |
+| `naturezas_juridicas` | `data/bronze/Naturezas_2026-10.zip` |
+| `qualificacoes_responsavel` | `data/bronze/Qualificacoes_2026-10.zip` |
+
 
 ## 4. Tecnologias
 
