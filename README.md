@@ -88,9 +88,9 @@ São gerados três arquivos Parquet:
 
 | Caminho | Conteúdo |
 |---|---|
-| `data/gold/empresas_por_natureza.parquet` | Código e descrição oficial da natureza jurídica, quantidade de empresas, capital total e capital médio. |
-| `data/gold/empresas_por_qualificacao.parquet` | Código e descrição da qualificação do responsável, quantidade de empresas, capital total e capital médio. |
-| `data/gold/capital_por_porte.parquet` | Quantidade de empresas, capital total e capital médio por porte. |
+| `data/2026-10/gold/empresas_por_natureza.parquet` | Código e descrição oficial da natureza jurídica, quantidade de empresas, capital total e capital médio. |
+| `data/2026-10/gold/empresas_por_qualificacao.parquet` | Código e descrição da qualificação do responsável, quantidade de empresas, capital total e capital médio. |
+| `data/2026-10/gold/capital_por_porte.parquet` | Quantidade de empresas, capital total e capital médio por porte. |
 
 A consulta de natureza jurídica e a consulta de qualificação utilizam `LEFT JOIN`, preservando os registros de empresas mesmo quando não existe correspondência nas tabelas auxiliares.
 
@@ -99,32 +99,34 @@ Para naturezas jurídicas sem correspondência, é utilizada a identificação `
 
 ### Organização dos arquivos gerados
 
+Os dados são organizados em diretórios separados por competência, evitando a mistura de resultados de períodos diferentes.
+
 ```text
 data/
-├── bronze/
-│   ├── Empresas0.zip
-│   ├── Naturezas_2026-10.zip
-│   └── Qualificacoes_2026-10.zip
-│
-├── silver/
-│   └── empresas.parquet
-│
-├── gold/
-│   ├── empresas_por_natureza.parquet
-│   ├── empresas_por_qualificacao.parquet
-│   └── capital_por_porte.parquet
-│
-├── cnpj.duckdb
-└── auditoria.json
+└── 2026-10/
+    ├── bronze/
+    │   ├── Empresas0.zip
+    │   ├── Naturezas.zip
+    │   └── Qualificacoes.zip
+    ├── silver/
+    │   └── empresas.parquet
+    ├── gold/
+    │   ├── empresas_por_natureza.parquet
+    │   ├── empresas_por_qualificacao.parquet
+    │   └── capital_por_porte.parquet
+    ├── cnpj.duckdb
+    └── auditoria.json
 ```
 
-**Tabelas disponíveis no DuckDB (`data/cnpj.duckdb`):**
+**Tabelas disponíveis no DuckDB (`data/2026-10/cnpj.duckdb`):**
 
 | Tabela | Origem |
 |---|---|
 | `empresas` | Dados tratados da camada Silver |
-| `naturezas_juridicas` | `data/bronze/Naturezas_2026-10.zip` |
-| `qualificacoes_responsavel` | `data/bronze/Qualificacoes_2026-10.zip` |
+| `naturezas_juridicas` | `data/2026-10/bronze/Naturezas.zip` |
+| `qualificacoes_responsavel` | `data/2026-10/bronze/Qualificacoes.zip` |
+
+A competência é definida pela variável `COMPETENCIA`. Quando configurada como `auto`, o pipeline utiliza automaticamente o mês anterior.
 
 
 ## 4. Tecnologias
@@ -251,7 +253,7 @@ Os resultados correspondem exclusivamente à partição `Empresas0.zip`, na comp
 
 ## 8. Auditoria
 
-Ao final da execução, é gerado `data/auditoria.json`, contendo:
+Ao final da execução, é gerado `data/2026-10/auditoria.json`, contendo:
 
 - Competência e arquivos de empresas processados, incluindo a tabela auxiliar `Naturezas.zip`;
 - Data e hora da execução em UTC;
@@ -267,16 +269,21 @@ Na execução validada, o status foi `SUCESSO`.
 - Processamento em lotes para reduzir o consumo de memória.
 - Parquet para armazenamento colunar e comprimido.
 - DuckDB para consultas, relacionamentos e agregações analíticas.
-- LEFT JOIN para enriquecer os dados sem descartar registros de empresas.
-- Download automático da tabela oficial de naturezas jurídicas.
-- Docker para padronização do ambiente.
+- `LEFT JOIN` para enriquecer os dados sem descartar registros de empresas.
+- Download automático das tabelas oficiais de naturezas jurídicas e qualificações dos responsáveis.
+- Docker para padronização e reprodutibilidade do ambiente.
 - Schema explícito para garantir consistência dos dados.
+- Pytest para testes automatizados das regras de qualidade e da geração da camada Gold.
+
+**Escopo do processamento:**
+
+O case foi desenvolvido considerando a competência `2026-10` e a partição `Empresas0.zip`, conforme solicitado no enunciado. A arquitetura permite parametrizar a competência e os arquivos de entrada.
 
 **Melhorias futuras:**
-- Processar as dez partições da base.
-- Implementar testes automatizados com Pytest.
-- Adicionar checksum e monitoramento da execução.
-- Implementar histórico e particionamento por competência.
+- Adicionar checksum para validação da integridade dos arquivos baixados.
+- Implementar monitoramento e alertas de falhas.
+- Implementar histórico e particionamento dos dados por competência.
+- Ampliar a cobertura dos testes automatizados para outras etapas do pipeline.
 
 ## 10. Considerações finais
 

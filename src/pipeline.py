@@ -17,15 +17,6 @@ import pyarrow.parquet as pq
 # CONFIGURAÇÕES
 # ==========================================
 
-BASE = Path("/app/data")
-
-BRONZE = BASE / "bronze"
-SILVER = BASE / "silver"
-GOLD = BASE / "gold"
-
-ZIP_FILE = BRONZE / "Empresas0.zip"
-PARQUET_FILE = SILVER / "empresas.parquet"
-DB_FILE = BASE / "cnpj.duckdb"
 
 import os
 from datetime import datetime
@@ -53,6 +44,19 @@ def obter_competencia():
     return configuracao
 
 COMPETENCIA = obter_competencia()
+
+# Diretório exclusivo para cada competência
+DATA_ROOT = Path("/app/data")
+BASE = DATA_ROOT / COMPETENCIA
+
+BRONZE = BASE / "bronze"
+SILVER = BASE / "silver"
+GOLD = BASE / "gold"
+
+ZIP_FILE = BRONZE / "Empresas0.zip"
+PARQUET_FILE = SILVER / "empresas.parquet"
+DB_FILE = BASE / "cnpj.duckdb"
+
 
 def obter_arquivos():
     configuracao = os.getenv("ARQUIVOS", "todos")
@@ -166,7 +170,7 @@ def extract_naturezas():
         f"{COMPETENCIA}/Naturezas.zip"
     )
 
-    zip_file = BRONZE / f"Naturezas_{COMPETENCIA}.zip"
+    zip_file = BRONZE / "Naturezas.zip"
     temp_file = zip_file.with_suffix(".zip.tmp")
 
     # Reaproveita o arquivo se já existir e for um ZIP válido
@@ -226,7 +230,7 @@ def extract_qualificacoes():
         f"{COMPETENCIA}/Qualificacoes.zip"
     )
 
-    zip_file = BRONZE / f"Qualificacoes_{COMPETENCIA}.zip"
+    zip_file = BRONZE / "Qualificacoes.zip"
     temp_file = zip_file.with_suffix(".zip.tmp")
 
     # Reaproveita o arquivo se já existir e for um ZIP válido
@@ -281,7 +285,7 @@ def extract_qualificacoes():
 def load_naturezas():
     logging.info("Carregando tabela de naturezas jurídicas")
 
-    zip_file = BRONZE / f"Naturezas_{COMPETENCIA}.zip"
+    zip_file = BRONZE / "Naturezas.zip"
 
     if not zipfile.is_zipfile(zip_file):
         raise ValueError("Arquivo Naturezas.zip inexistente ou inválido.")
@@ -342,7 +346,7 @@ def load_qualificacoes():
 
     logging.info("Carregando tabela de qualificações")
 
-    zip_file = BRONZE / f"Qualificacoes_{COMPETENCIA}.zip"
+    zip_file = BRONZE / "Qualificacoes.zip"
 
     if not zipfile.is_zipfile(zip_file):
         raise ValueError("Arquivo Qualificacoes.zip inexistente ou inválido.")
