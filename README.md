@@ -1,13 +1,12 @@
 # Case Engenharia de Dados – CNPJ
 
-Atenção: Este conteúdo gerado por IA.
+Este projeto foi desenvolvido com o apoio de ferramentas de Inteligência Artificial (IA), utilizadas como suporte à elaboração, revisão e aprimoramento da documentação e do código, conforme permitido pelo enunciado do case. As decisões técnicas, validações e resultados foram revisados durante o desenvolvimento.
 
 ## 1. Objetivo
 
 Desenvolver um pipeline de Engenharia de Dados para ingestão, transformação, validação e disponibilização analítica dos Dados Abertos do CNPJ da Receita Federal.
 
 A solução utiliza Python, Pandas, DuckDB, PyArrow, Parquet e Docker, organizada em camadas Bronze, Silver e Gold.
-
 
 ## 2. Fonte de dados e escopo
 
@@ -23,18 +22,17 @@ A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Neste pro
 
 O endereço-base é configurado pela variável `SOURCE_BASE_URL` disponível em .env.example.
 
-O pipeline monta automaticamente os caminhos utilizando a competência e o nome de cada arquivo:
+O pipeline monta automaticamente os caminhos utilizando a competência e o nome de cada arquivo no seguinte formato:
 
 `{SOURCE_BASE_URL}/{COMPETENCIA}/{NOME_DO_ARQUIVO}.zip`
 
 Para outubro de 2026, os caminhos são:
 
-- `{SOURCE_BASE_URL}/2026-10/Empresas0.zip`
-- `{SOURCE_BASE_URL}/2026-10/Naturezas.zip`
-- `{SOURCE_BASE_URL}/2026-10/Qualificacoes.zip`
+- `https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/2026-10/Empresas0.zip`
+- `https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/2026-10/Naturezas.zip`
+- `https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/2026-10/Qualificacoes.zip`
 
-A URL-base deve ser configurada no arquivo `.env`. 
-
+A URL-base deve ser configurada no arquivo `.env`, conforme explicado no item 6.
 
 ## 4. Arquitetura da solução
 
@@ -42,16 +40,28 @@ O pipeline é organizado em três camadas (Bronze, Silver e Gold), seguindo um f
 
 - Bronze: armazenamento dos arquivos ZIP originais da Receita Federal.
 - Silver: dados tratados, padronizados e armazenados em Parquet.
-- Gold: tabelas analíticas e dados consolidados, prontos para consulta.
+- Gold: arquivos analíticos e dados consolidados em formato Parquet, preparados para consultas e consumo por outras ferramentas.
 
 O DuckDB é utilizado para validações, transformações e geração das tabelas analíticas.
 
-## 5. Dados disponibilizados
+## 5. Dados disponibilizados e armazenamento
 
-- `empresas_por_natureza.parquet`: quantidade de empresas e indicadores de capital por natureza jurídica.
-- `capital_por_porte.parquet`: distribuição de empresas e capital por porte.
-- `empresas_por_qualificacao.parquet`: indicadores por qualificação do responsável.
-- `empresas_consolidada.parquet`: dados das empresas enriquecidos com descrições das tabelas auxiliares.
+O projeto utiliza o **DuckDB** como mecanismo de banco de dados analítico, armazenando os dados processados no arquivo `cnpj.duckdb`, localizado no diretório da competência (`data/2026-10/cnpj.duckdb`).
+
+Dentro desse banco são criadas três tabelas:
+
+- `empresas`: tabela principal, contendo os dados cadastrais tratados e validados da Receita Federal.
+- `naturezas_juridicas`: tabela auxiliar com os códigos e descrições das naturezas jurídicas.
+- `qualificacoes_responsavel`: tabela auxiliar com os códigos e descrições das qualificações dos responsáveis.
+
+A partir dessas tabelas, o pipeline gera quatro conjuntos de dados analíticos na camada Gold, armazenados em arquivos independentes no formato Parquet:
+
+- `empresas_por_natureza.parquet`: indicadores de empresas agrupados por natureza jurídica.
+- `capital_por_porte.parquet`: distribuição de empresas e capital social por porte.
+- `empresas_por_qualificacao.parquet`: indicadores agrupados por qualificação do responsável.
+- `empresas_consolidada.parquet`: visão consolidada dos dados cadastrais, enriquecida com as descrições das tabelas auxiliares.
+
+Essa separação permite utilizar o DuckDB para processamento analítico e consultas SQL, enquanto os arquivos Parquet disponibilizam os resultados para consumo posterior por outras ferramentas.
 
 ## 6. Como executar
 
@@ -64,7 +74,7 @@ O DuckDB é utilizado para validações, transformações e geração das tabela
 
 No repositório, acesse Code → Codespaces → Create codespace on main.
 
-Crie seu arquivo local de configuração a partir do modelo:
+Crie seu arquivo local de configuração a partir do modelo. Abra o terminal e execute o código abaixo:
 
     cp .env.example .env
 
@@ -80,19 +90,22 @@ O arquivo `.env` é local e não deve ser versionado. O modelo `.env.example` é
 
 ### Execução
 
-Para construir a imagem:
+Abra um novo terminal:
+1. Construa a imagem Docker do projeto. Esse processo prepara o ambiente de execução, instala as dependências e incorpora o código-fonte e os testes à imagem:
 
 `docker compose build`
 
-Para executar o pipeline:
+2. Execute o pipeline para que o código faça a leitura e extração dos arquivos e gere as camadas de arquitetura:
 
 `docker compose run --rm pipeline`
 
-Para executar os testes automatizados:
+3. Execute os testes automatizados:
 
 `docker compose run --rm pipeline pytest -v tests/`
 
 Os dados são salvos no diretório `data/`, montado como volume do contêiner.
+
+Observação: A reconstrução da imagem é necessária quando houver alterações no Dockerfile, nas dependências ou nos arquivos incorporados à imagem, como src/ e tests/. Alterações apenas no .env não exigem uma nova construção.
 
 ## 7. Decisões técnicas e trade-offs
 
@@ -108,7 +121,7 @@ Os dados são salvos no diretório `data/`, montado como volume do contêiner.
 
 ## 8. Qualidade dos dados
 
-Na execução da competência `2026-10`, foram processados 30.063.698 registros da partição `Empresas0`.
+Os indicadores apresentados abaixo correspondem à execução da competência `2026-10`, utilizando exclusivamente a partição `Empresas0`.
 
 Resultados das verificações:
 
@@ -122,7 +135,7 @@ Resultados das verificações:
 
 Os registros sem correspondência nas tabelas auxiliares são preservados, com indicação de ausência de descrição, em vez de serem descartados.
 
-Os resultados são registrados no arquivo `auditoria.json`.
+Os resultados das verificações são registrados no arquivo auditoria.json, que documenta a competência processada, os arquivos utilizados, a quantidade de registros, os indicadores de qualidade e o status da execução.
 
 ## 9. Limitações conhecidas
 
