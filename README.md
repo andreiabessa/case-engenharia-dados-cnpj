@@ -99,6 +99,8 @@ Abra um novo terminal:
 
 `docker compose run --rm pipeline`
 
+Atenção: Esta etapa pode demorar um pouco devido ao tamanho do arquivo que está sendo processado.
+
 3. Execute os testes automatizados:
 
 `docker compose run --rm pipeline pytest -v tests/`
