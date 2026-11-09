@@ -1,10 +1,13 @@
 # Case Engenharia de Dados – CNPJ
 
+Atenção: Este conteúdo gerado por IA.
+
 ## 1. Objetivo
 
 Desenvolver um pipeline de Engenharia de Dados para ingestão, transformação, validação e disponibilização analítica dos Dados Abertos do CNPJ da Receita Federal.
 
 A solução utiliza Python, Pandas, DuckDB, PyArrow, Parquet e Docker, organizada em camadas Bronze, Silver e Gold.
+
 
 ## 2. Fonte de dados e escopo
 
@@ -81,7 +84,7 @@ Para executar os testes automatizados:
 
 `docker compose run --rm pipeline pytest -v tests/`
 
-Os dados são persistidos no diretório `data/`, montado como volume do contêiner.
+Os dados são salvos no diretório `data/`, montado como volume do contêiner.
 
 ## 7. Decisões técnicas e trade-offs
 
