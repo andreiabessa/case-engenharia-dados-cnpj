@@ -17,13 +17,11 @@ A solução utiliza Python, Pandas, DuckDB, PyArrow, Parquet e Docker, organizad
 - Tabelas auxiliares: `Naturezas.zip` e `Qualificacoes.zip`.
 - Formato original: CSV delimitado por ponto e vírgula, codificação Latin-1.
 
-A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Neste projeto foi processada somente a partição `Empresas0`, conforme o escopo do case.
-
-Os resultados não representam a totalidade das empresas brasileiras.
+A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Neste projeto foi processada somente a partição `Empresas0`, conforme o escopo do case, sendo assim,  os resultados não representam a totalidade das empresas brasileiras.
 
 ## 3. Fonte e URLs dos arquivos
 
-O endereço-base é configurado pela variável `SOURCE_BASE_URL`.
+O endereço-base é configurado pela variável `SOURCE_BASE_URL` disponível em .env.example.
 
 O pipeline monta automaticamente os caminhos utilizando a competência e o nome de cada arquivo:
 
@@ -35,7 +33,7 @@ Para outubro de 2026, os caminhos são:
 - `{SOURCE_BASE_URL}/2026-10/Naturezas.zip`
 - `{SOURCE_BASE_URL}/2026-10/Qualificacoes.zip`
 
-A URL-base deve ser configurada no arquivo `.env`. Não inclua credenciais ou parâmetros privados no README ou no repositório.
+A URL-base deve ser configurada no arquivo `.env`. 
 
 
 ## 4. Arquitetura da solução
@@ -64,11 +62,21 @@ O DuckDB é utilizado para validações, transformações e geração das tabela
 
 ### Configuração do ambiente
 
-Configure as variáveis no arquivo `.env`:
+No repositório, acesse Code → Codespaces → Create codespace on main.
 
-- `SOURCE_BASE_URL`: endereço-base dos arquivos oficiais.
-- `COMPETENCIA`: competência dos dados, por exemplo `2026-10`.
-- `ARQUIVOS`: partição de empresas a processar, neste case `Empresas0`.
+Crie seu arquivo local de configuração a partir do modelo:
+
+    cp .env.example .env
+
+O arquivo `.env.example` já contém o endereço-base dos dados oficiais da Receita Federal e os valores padrão para execução.
+
+Após copiar o arquivo, edite o `.env` caso queira alterar alguma configuração:
+
+- `SOURCE_BASE_URL`: endereço-base dos arquivos oficiais (já preenchido no modelo).
+- `COMPETENCIA`: use `auto` para buscar automaticamente a competência anterior (M-1) ou informe uma competência específica no formato `AAAA-MM`.
+- `ARQUIVOS`: use `Empresas0` para processar a partição deste case, `todos` para processar as dez partições ou informe partições específicas separadas por vírgula.
+
+O arquivo `.env` é local e não deve ser versionado. O modelo `.env.example` é mantido no repositório para facilitar a configuração de novos usuários. O Docker Compose disponibiliza as variáveis no contêiner por meio de `env_file`.
 
 ### Execução
 
@@ -118,8 +126,7 @@ Os resultados são registrados no arquivo `auditoria.json`.
 
 ## 9. Limitações conhecidas
 
-- O processamento contempla somente a partição `Empresas0`, e não a base completa de empresas.
-- Os resultados representam um subconjunto da base nacional, correspondente à partição `Empresas0`, e não o universo completo de CNPJs.
+- O processamento e os resultados contemplam somente a partição `Empresas0`, e não a base completa de empresas.
 - A qualidade e a disponibilidade dos dados dependem da fonte oficial da Receita Federal.
 - Um código de qualificação sem correspondência na tabela auxiliar permanece sem descrição, sem perda do registro original.
 
