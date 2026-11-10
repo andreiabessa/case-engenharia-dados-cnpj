@@ -1,9 +1,6 @@
 # Dados baixados e processados
 data/
 
-# Variáveis de ambiente
-.env
-
 # Python
 __pycache__/
 *.py[cod]
