@@ -20,7 +20,7 @@ A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Neste pro
 
 ## 3. Fonte e URLs dos arquivos
 
-O endereço-base é configurado pela variável `SOURCE_BASE_URL` disponível em .env.example.
+O endereço-base é configurado pela variável `SOURCE_BASE_URL`, definida no arquivo `.env`, localizado na raiz do projeto.
 
 O pipeline monta automaticamente os caminhos utilizando a competência e o nome de cada arquivo no seguinte formato:
 
@@ -48,45 +48,41 @@ O DuckDB é utilizado para validações, transformações e geração das tabela
 
 O projeto utiliza o **DuckDB** como mecanismo de banco de dados analítico, armazenando os dados processados no arquivo `cnpj.duckdb`, localizado no diretório da competência (`data/2026-10/cnpj.duckdb`).
 
-Dentro desse banco são criadas três tabelas:
+Dentro desse banco é criada a tabela:
 
 - `empresas`: tabela principal, contendo os dados cadastrais tratados e validados da Receita Federal.
-- `naturezas_juridicas`: tabela auxiliar com os códigos e descrições das naturezas jurídicas.
-- `qualificacoes_responsavel`: tabela auxiliar com os códigos e descrições das qualificações dos responsáveis.
 
-A partir dessas tabelas, o pipeline gera quatro conjuntos de dados analíticos na camada Gold, armazenados em arquivos independentes no formato Parquet:
+A partir dos dados tratados e das tabelas auxiliares de naturezas jurídicas e qualificações, o pipeline gera quatro conjuntos de dados analíticos na camada Gold, armazenados em arquivos independentes no formato Parquet:
 
 - `empresas_por_natureza.parquet`: indicadores de empresas agrupados por natureza jurídica.
 - `capital_por_porte.parquet`: distribuição de empresas e capital social por porte.
 - `empresas_por_qualificacao.parquet`: indicadores agrupados por qualificação do responsável.
 - `empresas_consolidada.parquet`: visão consolidada dos dados cadastrais, enriquecida com as descrições das tabelas auxiliares.
 
-Essa separação permite utilizar o DuckDB para processamento analítico e consultas SQL, enquanto os arquivos Parquet disponibilizam os resultados para consumo posterior por outras ferramentas.
+O DuckDB é utilizado para processamento analítico e consultas SQL, enquanto os arquivos Parquet disponibilizam os resultados consolidados para consumo por outras ferramentas.
 
 ## 6. Como executar
 
 ### Pré-requisitos
 
 - GitHub Codespaces ou ambiente com Docker e Docker Compose.
-- Arquivo `.env` configurado na raiz do projeto.
+- Arquivo `.env` disponível na raiz do projeto.
 
 ### Configuração do ambiente
 
 No repositório, acesse Code → Codespaces → Create codespace on main.
 
-Crie seu arquivo local de configuração a partir do modelo. Abra o terminal e execute o código abaixo:
+O arquivo `.env` já está incluído no repositório e contém as configurações necessárias para executar o pipeline.
 
-    cp .env.example .env
+Caso queira alterar alguma configuração, edite diretamente o arquivo `.env`:
 
-O arquivo `.env.example` já contém o endereço-base dos dados oficiais da Receita Federal e os valores padrão para execução.
-
-Após copiar o arquivo, edite o `.env` caso queira alterar alguma configuração:
-
-- `SOURCE_BASE_URL`: endereço-base dos arquivos oficiais (já preenchido no modelo).
+- `SOURCE_BASE_URL`: endereço-base dos arquivos oficiais da Receita Federal.
 - `COMPETENCIA`: use `auto` para buscar automaticamente a competência anterior (M-1) ou informe uma competência específica no formato `AAAA-MM`.
 - `ARQUIVOS`: use `Empresas0` para processar a partição deste case, `todos` para processar as dez partições ou informe partições específicas separadas por vírgula.
 
-O arquivo `.env` é local e não deve ser versionado. O modelo `.env.example` é mantido no repositório para facilitar a configuração de novos usuários. O Docker Compose disponibiliza as variáveis no contêiner por meio de `env_file`.
+O Docker Compose disponibiliza as variáveis no contêiner por meio de `env_file`.
+
+**Observação:** o arquivo `.env` está versionado neste projeto e contém apenas configurações de execução, sem credenciais ou senhas.
 
 ### Execução
 
