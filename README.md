@@ -32,7 +32,7 @@ Para outubro de 2026, os caminhos são:
 - `https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/2026-10/Naturezas.zip`
 - `https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/2026-10/Qualificacoes.zip`
 
-A URL-base deve ser configurada no arquivo `.env`, conforme explicado no item 6.
+A URL-base pode ser configurada no arquivo `.env`, conforme explicado no item 6.
 
 ## 4. Arquitetura da solução
 
