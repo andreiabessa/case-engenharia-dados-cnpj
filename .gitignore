@@ -12,3 +12,4 @@ __pycache__/
 
 # Arquivos temporários
 *.tmp
+*.log

@@ -16,7 +16,7 @@ A solução utiliza Python, Pandas, DuckDB, PyArrow, Parquet e Docker, organizad
 - Tabelas auxiliares: `Naturezas.zip` e `Qualificacoes.zip`.
 - Formato original: CSV delimitado por ponto e vírgula, codificação Latin-1.
 
-A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Neste projeto foi processada somente a partição `Empresas0`, conforme o escopo do case, sendo assim,  os resultados não representam a totalidade das empresas brasileiras.
+A base de empresas possui dez partições (`Empresas0` a `Empresas9`). Conforme o escopo do case, este projeto processa somente a partição `Empresas0`. Portanto, os resultados não representam a totalidade das empresas brasileiras.
 
 ## 3. Fonte e URLs dos arquivos
 
@@ -48,17 +48,27 @@ O DuckDB é utilizado para validações, transformações e geração das tabela
 
 O projeto utiliza o **DuckDB** como mecanismo de banco de dados analítico, armazenando os dados processados no arquivo `cnpj.duckdb`, localizado no diretório da competência (`data/2026-10/cnpj.duckdb`).
 
-Dentro desse banco é criada a tabela:
+Dentro desse banco são disponibilizadas as seguintes tabelas:
 
 - `empresas`: tabela principal, contendo os dados cadastrais tratados e validados da Receita Federal.
+- `naturezas_juridicas`: tabela auxiliar com as descrições das naturezas jurídicas.
+- `qualificacoes_responsavel`: tabela auxiliar com as descrições das qualificações dos responsáveis.
 
-A partir dos dados tratados e das tabelas auxiliares de naturezas jurídicas e qualificações, o pipeline gera cinco conjuntos de dados analíticos na camada Gold, armazenados em arquivos independentes no formato Parquet:
+Além dessas tabelas, a camada Gold gera cinco arquivos Parquet com os resultados analíticos:
 
 - `empresas_por_natureza.parquet`: indicadores de empresas agrupados por natureza jurídica.
 - `capital_por_porte.parquet`: distribuição de empresas e capital social por porte.
 - `empresas_por_qualificacao.parquet`: indicadores agrupados por qualificação do responsável.
 - `empresas_consolidada.parquet`: visão consolidada dos dados cadastrais, enriquecida com as descrições das tabelas auxiliares, apresentadas imediatamente após seus respectivos códigos.
 - `capital_social_atipicos.parquet`: registros com valores de capital social potencialmente atípicos, identificados pelo método IQR.
+
+O pipeline também registra cinco views no DuckDB, permitindo consultar diretamente esses arquivos por meio de SQL. As views possuem os mesmos nomes dos arquivos, sem a extensão `.parquet`:
+
+- `empresas_por_natureza`
+- `capital_por_porte`
+- `empresas_por_qualificacao`
+- `empresas_consolidada`
+- `capital_social_atipicos`
 
 ### Identificação de capitais sociais potencialmente atípicos
 
@@ -79,7 +89,7 @@ Essa classificação indica valores que merecem investigação, mas não signifi
 
 A geração desse arquivo ocorre automaticamente durante a execução do pipeline.
 
-Ao final da geração da camada Gold, o pipeline também apresenta no terminal um exemplo de registro da tabela consolidada, permitindo visualizar os dados após os joins e tratamentos.
+Ao final da geração da camada Gold, o pipeline também apresenta no terminal um exemplo de registro da view consolidada, permitindo visualizar os dados após os joins e tratamentos.
 
 O DuckDB é utilizado para processamento analítico e consultas SQL, enquanto os arquivos Parquet disponibilizam os resultados consolidados para consumo por outras ferramentas.
 
@@ -99,7 +109,7 @@ O arquivo `.env` já está incluído no repositório e contém as configuraçõe
 Caso queira alterar alguma configuração, edite diretamente o arquivo `.env`:
 
 - `SOURCE_BASE_URL`: endereço-base dos arquivos oficiais da Receita Federal.
-- `COMPETENCIA`: use `auto` para buscar automaticamente a competência anterior (M-1) ou informe uma competência específica no formato `AAAA-MM`.
+- `COMPETENCIA`: use `auto` para selecionar automaticamente a competência do mês anterior à data de execução (M-1) ou informe uma competência específica no formato `AAAA-MM`.
 - `ARQUIVOS`: use `Empresas0` para processar a partição deste case, `todos` para processar as dez partições ou informe partições específicas separadas por vírgula.
 
 O Docker Compose disponibiliza as variáveis no contêiner por meio de `env_file`.
@@ -121,7 +131,7 @@ Atenção: Esta etapa pode demorar um pouco devido ao tamanho do arquivo que est
 
 3. Execute os testes automatizados:
 
-`docker compose run --rm pipeline pytest -v tests/`
+`docker compose run --rm pipeline python -m pytest tests/ -v`
 
 Os dados são salvos no diretório `data/`, montado como volume do contêiner.
 
@@ -149,6 +159,14 @@ Consultar as tabelas disponíveis:
 SHOW TABLES;
 ```
 
+Consultar registros da camada Gold consolidada:
+
+```sql
+SELECT *
+FROM empresas_consolidada
+LIMIT 10;
+```
+
 Consultar a estrutura da tabela principal:
 
 ```sql
@@ -171,13 +189,43 @@ Para sair do terminal SQL:
 
 O terminal também permite executar consultas analíticas e explorar os dados sem precisar modificar o código Python do pipeline.
 
+### Acessando o ambiente interativo Python
+
+O projeto também disponibiliza um ambiente interativo Python para consultas analíticas, utilizando DuckDB, Pandas e Tabulate.
+
+Após executar o pipeline, inicie o ambiente com:
+
+```bash
+docker compose run --rm --entrypoint python pipeline -i src/consulta.py
+```
+
+A competência utilizada pelo ambiente segue a variável `COMPETENCIA` definida no arquivo `.env`. Quando `COMPETENCIA=auto`, o ambiente seleciona automaticamente o mês anterior à data de execução (M-1), seguindo a mesma regra utilizada pelo pipeline.
+
+Com o ambiente iniciado, é possível executar consultas SQL por meio da função `consultar()`.
+
+Exemplo:
+
+```python
+consultar("SELECT * FROM empresas_consolidada LIMIT 10")
+```
+
+Os resultados são exibidos em formato tabular e também retornados como um DataFrame Pandas.
+
+Para encerrar o ambiente, utilize:
+
+```python
+exit()
+```
+
 ## 7. Decisões técnicas e trade-offs
 
 - **Python:** orquestração do processo de ingestão e transformação.
+- **PyArrow:** suporte à manipulação e gravação dos arquivos Parquet.
 - **Pandas:** leitura e tratamento dos dados de origem.
 - **DuckDB:** processamento analítico local, validações e consultas SQL.
 - **Parquet:** armazenamento colunar e eficiente para leitura analítica.
 - **Docker:** padronização do ambiente e reprodutibilidade da execução.
+- **Tabulate:** apresentação dos resultados das consultas em formato tabular no ambiente interativo Python.
 - **Processamento em partição:** escolha da `Empresas0` para atender ao escopo do case e limitar o consumo de recursos.
 - **Processamento em blocos:** leitura dos arquivos CSV em blocos de 250 mil registros, reduzindo o consumo de memória durante a transformação da camada Silver.
 - **Controle de memória:** limitação de memória e paralelismo do DuckDB, além de diretório temporário para operações que excedam a memória disponível.
@@ -192,7 +240,8 @@ Resultados das verificações:
 - 30.063.698 registros processados.
 - 30.063.698 CNPJs básicos únicos.
 - Nenhum CNPJ básico inválido identificado.
-- Nenhum capital social inválido ou negativo identificado.
+- Nenhum capital social inválido identificado.
+- Nenhum capital social negativo identificado.
 - Nenhuma natureza jurídica ausente.
 - 4.109 registros sem informação de porte.
 - 337 empresas sem descrição de qualificação correspondente na tabela auxiliar.
@@ -201,11 +250,14 @@ Os registros sem correspondência nas tabelas auxiliares são preservados, com i
 
 Os resultados das verificações são registrados no arquivo auditoria.json, que documenta a competência processada, os arquivos utilizados, a quantidade de registros, os indicadores de qualidade e o status da execução.
 
+A execução foi concluída com status `SUCESSO`, conforme registrado no arquivo de auditoria.
+
 ## 9. Limitações conhecidas
 
 - O processamento e os resultados contemplam somente a partição `Empresas0`, e não a base completa de empresas.
 - A qualidade e a disponibilidade dos dados dependem da fonte oficial da Receita Federal.
 - Um código de qualificação sem correspondência na tabela auxiliar permanece sem descrição, sem perda do registro original.
+- O ambiente de consulta interativo depende da execução prévia do pipeline para disponibilizar o banco DuckDB e as views analíticas.
 
 ## 10. Evoluções futuras
 

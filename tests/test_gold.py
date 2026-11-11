@@ -16,22 +16,31 @@ def preparar_banco_teste(tmp_path, monkeypatch):
     con = duckdb.connect(str(banco))
 
     con.execute("""
-        CREATE TABLE empresas AS
-        SELECT *
-        FROM (
-            VALUES
-                ('11111111', '2135', '05', 100.0, '01', 'Microempresa'),
-                ('22222222', '2135', '05', 200.0, '01', 'Microempresa'),
-                ('33333333', '2062', '10', 500.0, '03', 'Demais'),
-                ('44444444', '9999', '36', 200.0, '03', 'Demais')
-        ) AS t(
-            cnpj_basico,
-            natureza_juridica,
-            qualificacao_responsavel,
-            capital_social,
-            porte_empresa,
-            porte_descricao
+        CREATE TABLE empresas (
+            cnpj_basico VARCHAR,
+            razao_social VARCHAR,
+            natureza_juridica VARCHAR,
+            qualificacao_responsavel VARCHAR,
+            capital_social DOUBLE,
+            porte_empresa VARCHAR,
+            porte_descricao VARCHAR,
+            ente_federativo_responsavel VARCHAR,
+            cnpj_basico_valido BOOLEAN,
+            capital_social_valido BOOLEAN,
+            competencia VARCHAR
         )
+    """)
+
+    con.execute("""
+        INSERT INTO empresas VALUES
+            ('11111111', 'Empresa A', '2135', '05', 100.0, '01',
+             'Microempresa', '', TRUE, TRUE, '2026-10'),
+            ('22222222', 'Empresa B', '2135', '05', 200.0, '01',
+             'Microempresa', '', TRUE, TRUE, '2026-10'),
+            ('33333333', 'Empresa C', '2062', '10', 500.0, '03',
+             'Demais', '', TRUE, TRUE, '2026-10'),
+            ('44444444', 'Empresa D', '9999', '36', 200.0, '03',
+             'Demais', '', TRUE, TRUE, '2026-10')
     """)
 
     con.execute("""
@@ -57,7 +66,7 @@ def preparar_banco_teste(tmp_path, monkeypatch):
     con.close()
 
 
-def test_create_gold_gera_tres_arquivos(tmp_path, monkeypatch):
+def test_create_gold_gera_cinco_arquivos(tmp_path, monkeypatch):
     preparar_banco_teste(tmp_path, monkeypatch)
 
     pipeline.create_gold()
@@ -68,6 +77,8 @@ def test_create_gold_gera_tres_arquivos(tmp_path, monkeypatch):
         "empresas_por_natureza.parquet",
         "capital_por_porte.parquet",
         "empresas_por_qualificacao.parquet",
+        "empresas_consolidada.parquet",
+        "capital_social_atipicos.parquet",
     ]
 
     for arquivo in arquivos:
@@ -170,6 +181,39 @@ def test_gold_gera_tabela_consolidada_completa(tmp_path, monkeypatch):
             "Não encontrada",
             "Código não encontrado na tabela oficial"
         )
+
+    finally:
+        con.close()
+
+
+def test_gold_registra_cinco_views_no_duckdb(tmp_path, monkeypatch):
+    preparar_banco_teste(tmp_path, monkeypatch)
+
+    pipeline.create_gold()
+
+    con = duckdb.connect(str(tmp_path / "teste.duckdb"))
+
+    try:
+        tabelas = {
+            linha[0]
+            for linha in con.execute("SHOW TABLES").fetchall()
+        }
+
+        views_gold = {
+            "empresas_por_natureza",
+            "capital_por_porte",
+            "empresas_por_qualificacao",
+            "empresas_consolidada",
+            "capital_social_atipicos",
+        }
+
+        assert views_gold.issubset(tabelas)
+
+        total = con.execute(
+            "SELECT COUNT(*) FROM empresas_consolidada"
+        ).fetchone()[0]
+
+        assert total == 4
 
     finally:
         con.close()

@@ -2,9 +2,11 @@ import os
 import json
 import zipfile
 import logging
+import threading
+import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 
 import requests
 import pandas as pd
@@ -12,14 +14,6 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-
-# ==========================================
-# CONFIGURAÇÕES
-# ==========================================
-
-
-import os
-from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 SOURCE_BASE_URL = os.getenv("SOURCE_BASE_URL")
@@ -924,6 +918,26 @@ def create_gold():
             (FORMAT PARQUET, COMPRESSION SNAPPY)
         """)
 
+        # Registra as saídas Gold como views no DuckDB
+        arquivos_gold = {
+            "empresas_por_natureza": "empresas_por_natureza.parquet",
+            "capital_por_porte": "capital_por_porte.parquet",
+            "empresas_por_qualificacao": "empresas_por_qualificacao.parquet",
+            "empresas_consolidada": "empresas_consolidada.parquet",
+            "capital_social_atipicos": "capital_social_atipicos.parquet",
+        }
+
+        for nome_view, nome_arquivo in arquivos_gold.items():
+            arquivo = GOLD / nome_arquivo
+
+            con.execute(f"""
+                CREATE OR REPLACE VIEW {nome_view} AS
+                SELECT *
+                FROM read_parquet('{arquivo}')
+            """)
+
+        logging.info("Views Gold registradas no DuckDB")
+
         logging.info("Camada Gold criada com sucesso")
 
     finally:
@@ -934,25 +948,78 @@ def create_gold():
 # ==========================================
 
 
+
+def executar_etapa(nome, funcao, *args):
+    inicio = time.perf_counter()
+    parar = threading.Event()
+
+    def atualizar_tempo():
+        while not parar.wait(1):
+            decorrido = int(time.perf_counter() - inicio)
+            print(
+                f"\r⏳ {nome} em andamento... {decorrido}s",
+                end="",
+                flush=True
+            )
+
+    print(f"\n⏳ {nome} iniciado...", flush=True)
+
+    thread = threading.Thread(
+        target=atualizar_tempo,
+        daemon=True
+    )
+    thread.start()
+
+    try:
+        resultado = funcao(*args)
+
+    except BaseException:
+        parar.set()
+        thread.join()
+
+        duracao = time.perf_counter() - inicio
+
+        print(
+            f"\r✗ {nome} falhou após {duracao:.1f}s"
+            + " " * 15,
+            flush=True
+        )
+        raise
+
+    else:
+        parar.set()
+        thread.join()
+
+        duracao = time.perf_counter() - inicio
+
+        print(
+            f"\r✓ {nome} concluído em {duracao:.1f}s"
+            + " " * 15,
+            flush=True
+        )
+
+        return resultado
+
+
 def main():
 
-    inicio = datetime.now(timezone.utc)
+    inicio = datetime.now().astimezone()
 
     logging.info("===== PIPELINE CNPJ INICIADO =====")
 
-    extract()
+    executar_etapa("EXTRAÇÃO — EMPRESAS", extract)
 
-    extract_naturezas()
-    extract_qualificacoes()
+    executar_etapa("EXTRAÇÃO — NATUREZAS", extract_naturezas)
+    executar_etapa("EXTRAÇÃO — QUALIFICAÇÕES", extract_qualificacoes)
 
-    total = transform()
+    total = executar_etapa("TRANSFORMAÇÃO — SILVER", transform)
 
-    indicadores = quality(total)
+    indicadores = executar_etapa("QUALIDADE DOS DADOS", quality, total)
 
-    load_naturezas()
-    load_qualificacoes()
+    executar_etapa("CARGA — NATUREZAS", load_naturezas)
+    executar_etapa("CARGA — QUALIFICAÇÕES", load_qualificacoes)
 
-    create_gold()
+    executar_etapa("GERAÇÃO — GOLD", create_gold)
 
     # Exibe um exemplo do modelo final da tabela Gold
     caminho_gold = GOLD / "empresas_consolidada.parquet"
