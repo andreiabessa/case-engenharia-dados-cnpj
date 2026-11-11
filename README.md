@@ -137,6 +137,23 @@ Os dados são salvos no diretório `data/`, montado como volume do contêiner.
 
 Observação: A reconstrução da imagem é necessária quando houver alterações no Dockerfile, nas dependências ou nos arquivos incorporados à imagem, como src/ e tests/. Alterações apenas no .env não exigem uma nova construção.
 
+### Atualização de versões anteriores
+
+Caso o projeto já tenha sido executado anteriormente, atualize o repositório para obter a versão mais recente do código e reconstrua a imagem Docker sem utilizar o cache:
+
+```bash
+git pull origin main
+docker compose build --no-cache pipeline
+```
+
+Em seguida, execute novamente o pipeline:
+
+```bash
+docker compose run --rm pipeline
+```
+
+**Importante:** a reconstrução da imagem atualiza o ambiente de execução, mas não apaga os dados já armazenados no diretório `data/`. Os arquivos existentes são preservados e podem ser atualizados ou substituídos conforme a execução do pipeline e a competência configurada.
+
 ### Acessando o terminal SQL do DuckDB
 
 Após executar o pipeline, é possível acessar o banco de dados diretamente pelo terminal interativo do DuckDB, utilizando o contêiner Docker.
@@ -157,6 +174,12 @@ Consultar as tabelas disponíveis:
 
 ```sql
 SHOW TABLES;
+```
+
+Para visualizar o conteúdo completo das colunas, sem limitação de largura na exibição, execute primeiro:
+
+```sql
+.maxwidth 0
 ```
 
 Consultar registros da camada Gold consolidada:
@@ -193,17 +216,27 @@ O terminal também permite executar consultas analíticas e explorar os dados se
 
 O projeto também disponibiliza um ambiente interativo Python para consultas analíticas, utilizando DuckDB, Pandas e Tabulate.
 
-Após executar o pipeline, inicie o ambiente com:
+**Pré-requisito:** execute o pipeline anteriormente para gerar o banco DuckDB e as views da camada Gold.
+
+No terminal Linux do Codespaces (prompt `$`), execute:
 
 ```bash
 docker compose run --rm --entrypoint python pipeline -i src/consulta.py
 ```
 
+Aguarde a inicialização. O ambiente correto apresentará o prompt Python:
+
+```python
+>>>
+```
+
+**Atenção:** não confunda esse ambiente com o terminal SQL do DuckDB, cujo prompt é semelhante a `cnpj D`. A função `consultar()` deve ser executada exclusivamente no interpretador Python.
+
 A competência utilizada pelo ambiente segue a variável `COMPETENCIA` definida no arquivo `.env`. Quando `COMPETENCIA=auto`, o ambiente seleciona automaticamente o mês anterior à data de execução (M-1), seguindo a mesma regra utilizada pelo pipeline.
 
-Com o ambiente iniciado, é possível executar consultas SQL por meio da função `consultar()`.
+**Exemplo de consulta:**
 
-Exemplo:
+No prompt Python (`>>>`), execute:
 
 ```python
 consultar("SELECT * FROM empresas_consolidada LIMIT 10")
@@ -211,11 +244,17 @@ consultar("SELECT * FROM empresas_consolidada LIMIT 10")
 
 Os resultados são exibidos em formato tabular e também retornados como um DataFrame Pandas.
 
-Para encerrar o ambiente, utilize:
+Para encerrar o ambiente Python:
 
 ```python
 exit()
 ```
+
+**Resumo dos ambientes:**
+
+- `$`: terminal Linux — executar comandos Docker.
+- `>>>`: interpretador Python — executar `consultar()`.
+- `cnpj D`: terminal SQL do DuckDB — executar comandos SQL diretamente no banco.
 
 ## 7. Decisões técnicas e trade-offs
 
