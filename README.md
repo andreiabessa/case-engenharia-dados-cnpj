@@ -52,12 +52,34 @@ Dentro desse banco é criada a tabela:
 
 - `empresas`: tabela principal, contendo os dados cadastrais tratados e validados da Receita Federal.
 
-A partir dos dados tratados e das tabelas auxiliares de naturezas jurídicas e qualificações, o pipeline gera quatro conjuntos de dados analíticos na camada Gold, armazenados em arquivos independentes no formato Parquet:
+A partir dos dados tratados e das tabelas auxiliares de naturezas jurídicas e qualificações, o pipeline gera cinco conjuntos de dados analíticos na camada Gold, armazenados em arquivos independentes no formato Parquet:
 
 - `empresas_por_natureza.parquet`: indicadores de empresas agrupados por natureza jurídica.
 - `capital_por_porte.parquet`: distribuição de empresas e capital social por porte.
 - `empresas_por_qualificacao.parquet`: indicadores agrupados por qualificação do responsável.
-- `empresas_consolidada.parquet`: visão consolidada dos dados cadastrais, enriquecida com as descrições das tabelas auxiliares.
+- `empresas_consolidada.parquet`: visão consolidada dos dados cadastrais, enriquecida com as descrições das tabelas auxiliares, apresentadas imediatamente após seus respectivos códigos.
+- `capital_social_atipicos.parquet`: registros com valores de capital social potencialmente atípicos, identificados pelo método IQR.
+
+### Identificação de capitais sociais potencialmente atípicos
+
+O pipeline também realiza uma análise estatística dos valores de capital social, utilizando o método do Intervalo Interquartil (IQR), aplicado separadamente por porte empresarial.
+
+O limite superior é calculado pela fórmula:
+
+`Limite superior = Q3 + (1,5 × IQR)`
+
+Em que:
+- Q1 (P25): primeiro quartil.
+- Q3 (P75): terceiro quartil.
+- IQR: diferença entre Q3 e Q1.
+
+Os registros que ultrapassam o limite superior do respectivo porte são classificados como potencialmente atípicos e disponibilizados em `capital_social_atipicos.parquet`.
+
+Essa classificação indica valores que merecem investigação, mas não significa necessariamente que sejam erros cadastrais ou financeiros.
+
+A geração desse arquivo ocorre automaticamente durante a execução do pipeline.
+
+Ao final da geração da camada Gold, o pipeline também apresenta no terminal um exemplo de registro da tabela consolidada, permitindo visualizar os dados após os joins e tratamentos.
 
 O DuckDB é utilizado para processamento analítico e consultas SQL, enquanto os arquivos Parquet disponibilizam os resultados consolidados para consumo por outras ferramentas.
 
@@ -104,6 +126,50 @@ Atenção: Esta etapa pode demorar um pouco devido ao tamanho do arquivo que est
 Os dados são salvos no diretório `data/`, montado como volume do contêiner.
 
 Observação: A reconstrução da imagem é necessária quando houver alterações no Dockerfile, nas dependências ou nos arquivos incorporados à imagem, como src/ e tests/. Alterações apenas no .env não exigem uma nova construção.
+
+### Acessando o terminal SQL do DuckDB
+
+Após executar o pipeline, é possível acessar o banco de dados diretamente pelo terminal interativo do DuckDB, utilizando o contêiner Docker.
+
+No comando abaixo, substitua `2026-10` pela competência efetivamente processada:
+
+```bash
+docker compose run --rm --entrypoint duckdb pipeline data/2026-10/cnpj.duckdb
+```
+
+**Observação:** se `COMPETENCIA=auto` estiver configurada no arquivo `.env`, consulte a competência identificada durante a execução do pipeline e utilize esse valor no caminho do banco. O terminal SQL não identifica automaticamente a competência processada.
+
+Com o terminal SQL aberto, podem ser executadas consultas diretamente no banco.
+
+Exemplos:
+
+Consultar as tabelas disponíveis:
+
+```sql
+SHOW TABLES;
+```
+
+Consultar a estrutura da tabela principal:
+
+```sql
+DESCRIBE empresas;
+```
+
+Consultar alguns registros:
+
+```sql
+SELECT *
+FROM empresas
+LIMIT 10;
+```
+
+Para sair do terminal SQL:
+
+```sql
+.exit
+```
+
+O terminal também permite executar consultas analíticas e explorar os dados sem precisar modificar o código Python do pipeline.
 
 ## 7. Decisões técnicas e trade-offs
 

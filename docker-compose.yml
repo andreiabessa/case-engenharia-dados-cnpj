@@ -6,4 +6,3 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    restart: "no"

@@ -708,7 +708,8 @@ def create_gold():
             GOLD / "empresas_por_qualificacao.parquet",
             GOLD / "top_empresas_por_porte.parquet",
             GOLD / "menores_empresas_por_porte.parquet",
-            GOLD / "empresas_consolidada.parquet"
+            GOLD / "empresas_consolidada.parquet",
+            GOLD / "capital_social_atipicos.parquet"
         ]
 
         for arquivo in arquivos_gold:
@@ -802,15 +803,25 @@ def create_gold():
         con.execute(f"""
             COPY (
                 SELECT
-                    e.*,
+                    e.cnpj_basico,
+                    e.razao_social,
+                    e.natureza_juridica,
                     COALESCE(
                         nj.descricao_natureza,
                         'Não encontrada'
                     ) AS descricao_natureza,
+                    e.qualificacao_responsavel,
                     COALESCE(
                         q.descricao_qualificacao,
                         'Código não encontrado na tabela oficial'
-                    ) AS descricao_qualificacao
+                    ) AS descricao_qualificacao,
+                    e.capital_social,
+                    e.porte_empresa,
+                    e.porte_descricao,
+                    e.ente_federativo_responsavel,
+                    e.cnpj_basico_valido,
+                    e.capital_social_valido,
+                    e.competencia
                 FROM empresas e
                 LEFT JOIN naturezas_juridicas nj
                     ON TRIM(e.natureza_juridica) = nj.natureza_juridica
@@ -819,6 +830,97 @@ def create_gold():
                        = q.codigo_qualificacao
             )
             TO '{GOLD / "empresas_consolidada.parquet"}'
+            (FORMAT PARQUET, COMPRESSION SNAPPY)
+        """)
+
+        # 5. Identificação de capitais sociais potencialmente atípicos
+        logging.info("Gerando identificação de capitais sociais atípicos")
+
+        con.execute(f"""
+            COPY (
+                WITH quartis AS (
+                    SELECT
+                        porte_descricao,
+                        quantile_cont(capital_social, 0.25) AS p25,
+                        quantile_cont(capital_social, 0.75) AS p75
+                    FROM empresas
+                    WHERE capital_social_valido = TRUE
+                      AND capital_social > 0
+                      AND porte_descricao <> 'Não informado'
+                    GROUP BY porte_descricao
+                ),
+                limites AS (
+                    SELECT
+                        porte_descricao,
+                        p25,
+                        p75,
+                        p75 - p25 AS intervalo_interquartil,
+                        p75 + 1.5 * (p75 - p25) AS limite_superior
+                    FROM quartis
+                )
+                SELECT
+                    e.cnpj_basico,
+                    e.razao_social,
+                    e.porte_descricao,
+                    e.natureza_juridica,
+                    e.capital_social,
+                    CASE
+                        WHEN e.capital_social >= 999950000000 THEN
+                            'R$ ' || REGEXP_REPLACE(
+                                REPLACE(PRINTF('%.1f', e.capital_social / 1000000000000), '.', ','),
+                                ',0$', ''
+                            ) || CASE
+                                WHEN ROUND(e.capital_social / 1000000000000, 1) < 2
+                                    THEN ' trilhão'
+                                ELSE ' trilhões'
+                            END
+
+                        WHEN e.capital_social >= 999950000 THEN
+                            'R$ ' || REGEXP_REPLACE(
+                                REPLACE(PRINTF('%.1f', e.capital_social / 1000000000), '.', ','),
+                                ',0$', ''
+                            ) || CASE
+                                WHEN ROUND(e.capital_social / 1000000000, 1) < 2
+                                    THEN ' bilhão'
+                                ELSE ' bilhões'
+                            END
+
+                        WHEN e.capital_social >= 999500 THEN
+                            'R$ ' || REGEXP_REPLACE(
+                                REPLACE(PRINTF('%.1f', e.capital_social / 1000000), '.', ','),
+                                ',0$', ''
+                            ) || CASE
+                                WHEN ROUND(e.capital_social / 1000000, 1) < 2
+                                    THEN ' milhão'
+                                ELSE ' milhões'
+                            END
+
+                        WHEN e.capital_social >= 1000 THEN
+                            'R$ ' || REGEXP_REPLACE(
+                                REPLACE(PRINTF('%.1f', e.capital_social / 1000), '.', ','),
+                                ',0$', ''
+                            ) || ' mil'
+
+                        ELSE
+                            'R$ ' || REPLACE(
+                                PRINTF('%.2f', e.capital_social),
+                                '.', ','
+                            )
+                    END AS capital_social_formatado,
+                    l.p25,
+                    l.p75,
+                    l.intervalo_interquartil,
+                    l.limite_superior,
+                    'Potencialmente atípico' AS classificacao
+                FROM empresas e
+                INNER JOIN limites l
+                    ON e.porte_descricao = l.porte_descricao
+                WHERE e.capital_social_valido = TRUE
+                  AND e.capital_social > 0
+                  AND e.porte_descricao <> 'Não informado'
+                  AND e.capital_social > l.limite_superior
+            )
+            TO '{GOLD / "capital_social_atipicos.parquet"}'
             (FORMAT PARQUET, COMPRESSION SNAPPY)
         """)
 
@@ -851,6 +953,61 @@ def main():
     load_qualificacoes()
 
     create_gold()
+
+    # Exibe um exemplo do modelo final da tabela Gold
+    caminho_gold = GOLD / "empresas_consolidada.parquet"
+
+    con = duckdb.connect()
+    try:
+        registro = con.execute(f"""
+            SELECT
+                cnpj_basico,
+                razao_social,
+                natureza_juridica,
+                descricao_natureza,
+                qualificacao_responsavel,
+                descricao_qualificacao,
+                capital_social
+            FROM read_parquet('{caminho_gold}')
+            ORDER BY cnpj_basico
+            LIMIT 1
+        """).fetchone()
+    finally:
+        con.close()
+
+    if registro:
+        (
+            cnpj,
+            razao_social,
+            natureza,
+            descricao_natureza,
+            qualificacao,
+            descricao_qualificacao,
+            capital_social
+        ) = registro
+
+        if capital_social is not None:
+            capital_formatado = (
+                f"R$ {capital_social:,.2f}"
+                .replace(",", "X")
+                .replace(".", ",")
+                .replace("X", ".")
+            )
+        else:
+            capital_formatado = "Não informado"
+
+        print("\n" + "=" * 68)
+        print("CAMADA GOLD — MODELO DA TABELA EMPRESAS CONSOLIDADAS")
+        print("=" * 68)
+        print("Exemplo de um registro após os joins e tratamentos:\n")
+        print(f"CNPJ básico:                 {cnpj}")
+        print(f"Razão social:                {razao_social}")
+        print(f"Natureza jurídica:           {natureza}")
+        print(f"Descrição da natureza:       {descricao_natureza}")
+        print(f"Qualificação do responsável: {qualificacao}")
+        print(f"Descrição da qualificação:   {descricao_qualificacao}")
+        print(f"Capital social:              {capital_formatado}")
+        print("=" * 68 + "\n")
 
     # Indicadores de correspondência das qualificações
     con = duckdb.connect(str(DB_FILE), read_only=True)
