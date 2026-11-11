@@ -549,11 +549,13 @@ def transform():
                         writer.write_table(tabela)
                         total += len(df)
 
-                        logging.info(
-                            "%s | Registros acumulados: %s",
-                            nome_arquivo,
-                            f"{total:,}"
+                        print(
+                            f"\r{nome_arquivo} | Registros processados: {total:,}",
+                            end="",
+                            flush=True
                         )
+
+                    print()
 
         if writer is not None:
             writer.close()
