@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+import zipfile
 
 from src import pipeline
 
@@ -56,3 +57,52 @@ def test_quality_identifica_coluna_ausente(tmp_path):
 
     with pytest.raises(ValueError, match="porte_descricao"):
         pipeline.quality(3)
+
+def test_transform_aceita_cnpj_alfanumerico(tmp_path, monkeypatch):
+    bronze = tmp_path / "bronze"
+    silver = tmp_path / "silver"
+
+    bronze.mkdir()
+    silver.mkdir()
+
+    conteudo = (
+        "12345678;Empresa Numerica;2135;05;100,00;01;\n"
+        "12abc345;Empresa Alfanumerica;2135;05;200,00;03;\n"
+        "12@BC345;Empresa Invalida;2135;05;300,00;01;\n"
+    )
+
+    with zipfile.ZipFile(
+        bronze / "Empresas0.zip", "w"
+    ) as arquivo_zip:
+        arquivo_zip.writestr("Empresas0.csv", conteudo)
+
+    monkeypatch.setattr(pipeline, "BRONZE", bronze)
+    monkeypatch.setattr(pipeline, "SILVER", silver)
+    monkeypatch.setattr(
+        pipeline,
+        "PARQUET_FILE",
+        silver / "empresas.parquet"
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "ARQUIVOS",
+        ["Empresas0"]
+    )
+
+    total = pipeline.transform()
+
+    resultado = pd.read_parquet(
+        silver / "empresas.parquet"
+    )
+
+    assert total == 3
+    assert resultado["cnpj_basico"].tolist() == [
+        "12345678",
+        "12ABC345",
+        "12@BC345",
+    ]
+    assert resultado["cnpj_basico_valido"].tolist() == [
+        True,
+        True,
+        False,
+    ]

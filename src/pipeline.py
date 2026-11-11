@@ -505,6 +505,11 @@ def transform():
                         for coluna in COLUNAS:
                             df[coluna] = df[coluna].str.strip()
 
+                        # Padronização do CNPJ básico
+                        df["cnpj_basico"] = (
+                            df["cnpj_basico"].str.upper()
+                        )
+
                         # Classificação do porte da empresa
                         df["porte_descricao"] = (
                             df["porte_empresa"]
@@ -515,7 +520,7 @@ def transform():
                         # Validação do CNPJ básico
                         df["cnpj_basico_valido"] = (
                             df["cnpj_basico"]
-                            .str.fullmatch(r"\d{8}")
+                            .str.fullmatch(r"[A-Za-z0-9]{8}")
                         )
 
                         # Validação e conversão do capital social
@@ -1119,7 +1124,7 @@ def main():
         "arquivos": [
             f"{nome}.zip" for nome in ARQUIVOS
         ] + ["Naturezas.zip", "Qualificacoes.zip"],
-        "data_execucao_utc": inicio.isoformat(),
+        "data_execucao_utc": inicio.astimezone(ZoneInfo("UTC")).isoformat(),
         "total_registros": total,
         "qualidade": indicadores,
         "qualidade_qualificacoes": indicadores_qualificacoes,
