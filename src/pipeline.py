@@ -7,6 +7,7 @@ import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 import pandas as pd
@@ -16,6 +17,8 @@ import pyarrow.parquet as pq
 
 from dateutil.relativedelta import relativedelta
 
+FUSO_HORARIO = ZoneInfo("America/Sao_Paulo")
+
 SOURCE_BASE_URL = os.getenv("SOURCE_BASE_URL")
 
 
@@ -23,7 +26,7 @@ def obter_competencia():
     configuracao = os.getenv("COMPETENCIA", "auto").strip()
 
     if configuracao.lower() == "auto":
-        hoje = datetime.now()
+        hoje = datetime.now(FUSO_HORARIO)
         primeiro_dia = hoje.replace(day=1)
         mes_anterior = primeiro_dia - relativedelta(months=1)
         return mes_anterior.strftime("%Y-%m")
@@ -1005,7 +1008,7 @@ def executar_etapa(nome, funcao, *args):
 
 def main():
 
-    inicio = datetime.now().astimezone()
+    inicio = datetime.now(FUSO_HORARIO)
 
     logging.info("===== PIPELINE CNPJ INICIADO =====")
 

@@ -2,18 +2,20 @@
 import os
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import duckdb
 import pandas as pd
 from tabulate import tabulate
 from dateutil.relativedelta import relativedelta
 
+FUSO_HORARIO = ZoneInfo("America/Sao_Paulo")
 
 def obter_competencia():
     configuracao = os.getenv("COMPETENCIA", "auto").strip()
 
     if configuracao.lower() == "auto":
-        hoje = datetime.now()
+        hoje = datetime.now(FUSO_HORARIO)
         primeiro_dia = hoje.replace(day=1)
         mes_anterior = primeiro_dia - relativedelta(months=1)
         return mes_anterior.strftime("%Y-%m")
